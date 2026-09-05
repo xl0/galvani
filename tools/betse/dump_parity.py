@@ -16,31 +16,29 @@ ap.add_argument('--every', type=int, default=50, help='then record every K-th st
 ap.add_argument('--total', type=float, default=5.0, help='init total time [s]')
 args = ap.parse_args()
 
+from betse.util.app.meta import appmetaone
+appmetaone.set_app_meta_betse_if_unset().init_libs()
 from betse.science.parameters import Parameters
 from betse.science.simrunner import SimRunner
 from betse.science import sim as simmod, sim_toolbox as stb
-from betse.util.app.meta import appmetaone
-from betse.science.enum.enumphase import SimPhaseKind
 
 work = tempfile.mkdtemp(prefix='galvani_parity_')
 conf = os.path.join(work, 'sim.yaml')
-# Write BETSE's default config, then patch it.
-from betse.science.config import confio
-from betse.util.path import files
-appmetaone.set_app_meta_if_unset_and_init_libs(None) if hasattr(appmetaone, 'set_app_meta_if_unset_and_init_libs') else None
-from betse.science.config.confdefault import write as write_default  # noqa
-write_default(conf)
+# Write BETSE's default config (plus geo/ and extra_configs/), then patch it.
+Parameters().copy_default(trg_conf_filename=conf)
 import ruamel.yaml
 yaml = ruamel.yaml.YAML()
 with open(conf) as f:
     doc = yaml.load(f)
 doc['general options']['simulate extracellular spaces'] = False
+doc['general network']['implement network'] = False
 doc['init time settings']['total time'] = args.total
-doc['init time settings']['sampling rate'] = args.total  # we record via hook, not storage
+doc['init time settings']['sampling rate'] = 1.0  # storage unused; we record via hook
 with open(conf, 'w') as f:
     yaml.dump(doc, f)
 
-p = Parameters().load(conf)
+p = Parameters()
+p.load(conf)
 runner = SimRunner(p)
 runner.seed()
 

@@ -1,0 +1,80 @@
+import type { Mesh } from './mesh';
+import type { Ion, Params } from './params';
+import { F } from './params';
+
+/** Mutable simulation state. Per-ion arrays are indexed [ion][cell|mem]. */
+export interface SimState {
+	t: number;
+	step: number;
+	/** membrane voltage [V], per membrane */
+	vm: Float64Array;
+	/** cell-average vm, per cell */
+	vmAve: Float64Array;
+	/** concentrations at cell centres [mol/m3] */
+	ccCells: Float64Array[];
+	/** concentrations at membranes (lagged copy of ccCells, see step.ts) */
+	ccAtMem: Float64Array[];
+	/** bath concentration per ion (well-mixed) */
+	ccEnv: Float64Array;
+	/** membrane permeability per ion per membrane */
+	Dm: Float64Array[];
+	/** gap-junction diffusion constant per ion per membrane */
+	Dgj: Float64Array[];
+	/** gap-junction open fraction, block factor; pump block factor */
+	gjOpen: Float64Array;
+	gjBlock: Float64Array;
+	nakBlock: Float64Array;
+	/** scratch: fluxes into cell across membranes / through GJs [mol/m2 s] */
+	fluxesMem: Float64Array[];
+	fluxesGj: Float64Array[];
+	/** Na/K pump rate per membrane */
+	rateNaK: Float64Array;
+	/** net charge density per cell [C/m3] */
+	rhoCells: Float64Array;
+	/** transjunctional voltage per membrane */
+	vgj: Float64Array;
+}
+
+export function createState(mesh: Mesh, ions: Ion[]): SimState {
+	const { nCells, nMems } = mesh;
+	const n = ions.length;
+	const per = (len: number, fill = 0) => Array.from({ length: n }, () => new Float64Array(len).fill(fill));
+	const s: SimState = {
+		t: 0,
+		step: 0,
+		vm: new Float64Array(nMems),
+		vmAve: new Float64Array(nCells),
+		ccCells: ions.map((ion) => new Float64Array(nCells).fill(ion.cCell)),
+		ccAtMem: ions.map((ion) => new Float64Array(nMems).fill(ion.cCell)),
+		ccEnv: Float64Array.from(ions, (ion) => ion.cEnv),
+		Dm: ions.map((ion) => new Float64Array(nMems).fill(ion.Dm)),
+		Dgj: ions.map((ion) => new Float64Array(nMems).fill(ion.Dfree)),
+		gjOpen: Float64Array.from(mesh.gjWeights),
+		gjBlock: new Float64Array(nMems).fill(1),
+		nakBlock: new Float64Array(nMems).fill(1),
+		fluxesMem: per(nMems),
+		fluxesGj: per(nMems),
+		rateNaK: new Float64Array(nMems),
+		rhoCells: new Float64Array(nCells),
+		vgj: new Float64Array(nMems)
+	};
+	return s;
+}
+
+/** Vm from net cell charge: surface charge / capacitance (BETSE update_V, polarizability 0). */
+export function updateV(mesh: Mesh, ions: Ion[], p: Params, s: SimState): void {
+	const { nCells, nMems } = mesh;
+	s.rhoCells.fill(0);
+	for (let i = 0; i < ions.length; i++) {
+		const zF = ions[i].z * F;
+		const cc = s.ccCells[i];
+		for (let c = 0; c < nCells; c++) s.rhoCells[c] += zF * cc[c];
+	}
+	s.vmAve.fill(0);
+	for (let m = 0; m < nMems; m++) {
+		const c = mesh.memToCell[m];
+		s.vm[m] = (s.rhoCells[c] * mesh.diviterm[c]) / p.cm;
+		s.vmAve[c] += s.vm[m];
+	}
+	for (let c = 0; c < nCells; c++) s.vmAve[c] /= mesh.numMems[c];
+}

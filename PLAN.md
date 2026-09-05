@@ -40,6 +40,21 @@ Validated against BETSE (venv at /home/xl0/pi-qa, source ~/.cache/checkouts/gith
 8. 3D
    - [ ] Only: keep mesh abstraction dimension-free; defer everything else
 
+## Implementation plan
+
+Core is pure TS in src/lib/core (no Svelte imports), Float64Array state, SI units
+internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
+(exported by tools/betse/dump_parity.py from the pi-qa venv).
+
 ## TODO
 
-(populated as decisions land)
+- [x] Scaffold: SvelteKit + bun + Tailwind v4 + vitest; git init; docs (PLAN, CONTEXT, ADR 0001)
+- [x] Parity fixture export script (tools/betse/dump_parity.py)
+- [x] Core: mesh types + fixture loader; seeded generator (jittered hex -> Voronoi -> clip)
+- [x] Core: state + step (pump, GHK flux, GJ Harris gating, bath update, Vm = Q/C), forward Euler
+- [x] Parity test: 451 steps, |dVm| ~1e-12 V, rel dconc ~1e-14 (tolerances 1e-10 / 1e-11)
+- [ ] shadcn-svelte init, zinc compact theme, light/dark
+- [ ] Worker runner + snapshot protocol; experiment JSON schema (zod) + URL hash persistence
+- [ ] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + uPlot traces
+- [ ] Profiles painting, events (permeability change, cut)
+- [ ] Phase 2: HH channels, Ca; fast equivalent-circuit solver; env grid
