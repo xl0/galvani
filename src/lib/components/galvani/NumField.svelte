@@ -29,11 +29,11 @@
 	}
 </script>
 
-<label class="flex min-w-0 items-center gap-1.5 text-xs" title={help}>
+<label class="flex min-w-0 items-center gap-1.5 text-sm" title={help}>
 	<span class="w-20 shrink-0 truncate text-muted-foreground {help ? 'cursor-help underline decoration-dotted underline-offset-2' : ''}">{label}</span>
 	<input
 		type="number"
-		class="h-6 w-full min-w-0 rounded border border-input bg-background px-1.5 font-mono text-xs tabular-nums outline-none focus:ring-1 focus:ring-ring"
+		class="h-7 w-full min-w-0 rounded border border-input bg-background px-1.5 font-mono text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
 		value={text}
 		{step}
 		{min}

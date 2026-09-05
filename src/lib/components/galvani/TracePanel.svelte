@@ -14,7 +14,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex items-center gap-1 border-b border-border px-2 py-1 text-xs">
+	<div class="flex h-10 items-center gap-1 border-b border-border px-2 text-sm">
 		<span class="mr-1 font-medium">Traces</span>
 		{#each quantities as q (q.id)}
 			<button

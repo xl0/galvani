@@ -57,8 +57,10 @@ BETSE (see PLAN.md, docs/adr/0001).
   (run/step/reset, field, colormap, tools, speed, theme), `ClusterView`
   (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout),
   `TracePanel` (toggleable quantities, one stacked `TraceChart` uPlot per
-  quantity, series per probe), `Colorbar`. ConfigPanel has a basic/advanced
-  toggle (`view.advanced`), section blurbs, and field tooltips (`help`).
+  quantity, series per probe), `Colorbar`. ConfigPanel is summary cards; each
+  physics category opens a `SettingsDialog` (large shadcn Dialog: `BigField`
+  form left, model explanation right). Regions/Events stay inline (painting
+  needs the canvas) using compact `NumField`s with tooltips.
   In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
 - `src/lib/components/ui/` — shadcn-svelte components (style "nova", base

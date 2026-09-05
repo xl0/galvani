@@ -35,7 +35,7 @@
 	const speeds = [1, 5, 25, 100, 400];
 </script>
 
-<div class="flex h-9 items-center gap-1 border-b border-border px-2 text-xs">
+<div class="flex h-10 items-center gap-1 border-b border-border px-2 text-sm">
 	{#if session.running}
 		<Button size="sm" variant="secondary" class="h-7 px-2" onclick={() => session.pause()} title="Pause"><Pause class="size-3.5" /></Button>
 	{:else}
@@ -50,13 +50,13 @@
 	<div class="mx-2 h-5 w-px bg-border"></div>
 
 	<Select.Root type="single" bind:value={view.field}>
-		<Select.Trigger class="h-7 w-24 text-xs" size="sm">{fields.find((f) => f.value === view.field)?.label}</Select.Trigger>
+		<Select.Trigger class="h-8 w-24 text-sm" size="sm">{fields.find((f) => f.value === view.field)?.label}</Select.Trigger>
 		<Select.Content>
 			{#each fields as f (f.value)}<Select.Item value={f.value} label={f.label} />{/each}
 		</Select.Content>
 	</Select.Root>
 	<Select.Root type="single" bind:value={view.colormap}>
-		<Select.Trigger class="h-7 w-28 text-xs" size="sm">{view.colormap}</Select.Trigger>
+		<Select.Trigger class="h-8 w-28 text-sm" size="sm">{view.colormap}</Select.Trigger>
 		<Select.Content>
 			{#each colormapNames as c (c)}<Select.Item value={c} label={c} />{/each}
 		</Select.Content>
@@ -78,7 +78,7 @@
 
 	<div class="mx-2 h-5 w-px bg-border"></div>
 	<Select.Root type="single" value={String(session.stepsPerTick)} onValueChange={(v) => session.setSpeed(Number(v))}>
-		<Select.Trigger class="h-7 w-28 text-xs" size="sm">{session.stepsPerTick} steps/tick</Select.Trigger>
+		<Select.Trigger class="h-8 w-28 text-sm" size="sm">{session.stepsPerTick} steps/tick</Select.Trigger>
 		<Select.Content>
 			{#each speeds as s (s)}<Select.Item value={String(s)} label={`${s} steps/tick`} />{/each}
 		</Select.Content>
