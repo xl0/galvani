@@ -63,18 +63,19 @@
 		for (let tt = 0; tt <= tEnd + 1e-12; tt += xs) {
 			const x = Math.round(toX(tt)) + 0.5;
 			ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
-			ctx.fillText(fmt(tt, 3), x, y1 + 12);
+			ctx.fillText(tt.toFixed(Math.max(0, -Math.floor(Math.log10(xs)))), x, y1 + 12);
 		}
 
 		const probeSeries = session.probes.map((c) => ({ color: session.probeColors[c] ?? '#888', data: seriesData(c), dash: [] as number[] }));
 		const bathSeries = withBath ? [{ color: session.bathColor, data: session.traceBath[ionIdx] ?? [], dash: [5, 3] }] : [];
 		const drawAxis = (lo: number, hi: number, side: 'left' | 'right') => {
 			const ys = tickStep(hi - lo, 4);
+			const decimals = Math.max(0, -Math.floor(Math.log10(ys)));
 			ctx.textAlign = side === 'left' ? 'right' : 'left';
 			for (let v = Math.ceil(lo / ys) * ys; v <= hi + 1e-12; v += ys) {
 				const y = Math.round(y1 - ((v - lo) / (hi - lo)) * (y1 - y0)) + 0.5;
 				if (side === 'left') { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); }
-				ctx.fillText(fmt(v, 4), side === 'left' ? x0 - 4 : x1 + 4, y + 3);
+				ctx.fillText(decimals > 6 ? v.toExponential(2) : v.toFixed(decimals), side === 'left' ? x0 - 4 : x1 + 4, y + 3);
 			}
 		};
 		const drawSeries = (s: { color: string; data: (number | null)[]; dash: number[] }, lo: number, hi: number) => {
