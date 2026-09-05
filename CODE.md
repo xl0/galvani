@@ -26,7 +26,8 @@ BETSE (see PLAN.md, docs/adr/0001).
     then GJ), clamp negatives, updateV. `ccAtMem` lags GJ flux by one step,
     on purpose (BETSE parity). Adds BETSE's 1e-25 nonce to vm in place.
   - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
-    Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak): `rates(V mV)` →
+    Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak, Cav1.2/1.3,
+    Cav2.1–2.3, Cav3.1/3.3, Ca L2/L3/G, Ca leak): `rates(V mV)` →
     gate steady states / time constants; `ChannelInstance` holds m, h, mask
     per membrane; `runChannel()` = implicit gate update, GHK flux with
     P·maxDm, applied to concentrations immediately (BETSE run_loop_channels
@@ -39,7 +40,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   `betse-channels.json` — same with the network on, no substances, Nav1p3 (2e-14)
   + Kv1p5 (1e-15) active during init (`dump.sh <out> --channels`).
   `betse-ca.json` — `basic_Ca` ion profile with the Ca-ATPase (`--ions basic_Ca`).
-  `parity.test.ts` runs the same checks over all three.
+  `betse-ca-channels.json` — basic_Ca + Nav/Kv/Cav3p3 (`--ions basic_Ca --channels --cav`).
+  `parity.test.ts` runs the same checks over all four.
 - `tools/betse/` — `setup.sh` builds `.venv` (uv) from the cached BETSE
   checkout; `dump.sh` regenerates the fixture via `dump_parity.py`, which hooks
   BETSE's `check_v` (called once per step) to snapshot state. BETSE needs a
@@ -56,11 +58,14 @@ BETSE (see PLAN.md, docs/adr/0001).
   N steps, snapshots <= 30 Hz with transferable Float32Arrays, per-step probe
   samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
-  applies edits (`edit()`), debounces the URL hash; `view.svelte.ts` display
+  applies edits (`edit()`), debounces the URL hash; traces share one time base
+  (`traceT`) with null gaps for probes added later; probe colours are assigned
+  on add and kept stable (`probeColors`); `view.svelte.ts` display
   state (field, colormap, tool, brush, zoom/pan, range).
 - `src/lib/presets.ts` — starter experiments (resting, leaky K+ patch, Na+
   pulse, excitable sheet with action potentials, wound); region cells are picked by generating the mesh on the main
   thread. Loading a preset always resets the run.
+- `src/lib/export.ts` — trace CSV download, experiment JSON download / file import.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
 - `src/lib/components/galvani/` — `Workbench` (3-pane grid, owns session/view),

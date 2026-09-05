@@ -13,7 +13,8 @@ const maxRel = (a: ArrayLike<number>, b: ArrayLike<number>) => { let d = 0; for 
 const cases = [
 	{ name: 'betse-basic', twist: 'Na/K/P/M, pump + GJ only' },
 	{ name: 'betse-channels', twist: 'Nav1p3 + Kv1p5 channels' },
-	{ name: 'betse-ca', twist: 'basic_Ca profile with Ca-ATPase' }
+	{ name: 'betse-ca', twist: 'basic_Ca profile with Ca-ATPase' },
+	{ name: 'betse-ca-channels', twist: 'basic_Ca + Nav1p3, Kv1p5, Cav3p3 channels' }
 ];
 
 describe.each(cases)('BETSE parity: $twist ($name)', ({ name }) => {

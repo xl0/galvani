@@ -3,13 +3,15 @@ import { defaultExperiment, needsReload, type Experiment } from '$lib/core/exper
 import { decodeExperiment, encodeExperiment } from '$lib/persist';
 import type { FromWorker, MeshGeom, Snapshot, ToWorker } from './protocol';
 
+/** Per-probe series aligned to SimSession.traceT; null before the probe existed. */
 export interface Trace {
-	t: number[];
 	/** cell-average Vm [V] */
-	vm: number[];
+	vm: (number | null)[];
 	/** per ion, [mol/m3] */
-	cc: number[][];
+	cc: (number | null)[][];
 }
+
+export const PROBE_PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#9a6324', '#469990', '#bfef45'];
 
 /** Owns the simulation worker and mirrors its state for the UI. */
 export class SimSession {
@@ -22,7 +24,11 @@ export class SimSession {
 	probes = $state<number[]>([]);
 	/** bumped whenever traces get new samples (traces themselves are plain arrays) */
 	traceVersion = $state(0);
+	/** shared time base of all traces [s] */
+	traceT: number[] = [];
 	traces = new Map<number, Trace>();
+	/** colour per probed cell; stable while the probe exists */
+	probeColors = $state<Record<number, string>>({});
 	stepsPerTick = $state(25);
 
 	private worker: Worker | null = null;
@@ -75,15 +81,21 @@ export class SimSession {
 		if (t.length === 0) return;
 		const nIons = this.experiment.ions.length;
 		const stride = 1 + nIons;
+		const n0 = this.traceT.length;
+		for (let j = 0; j < t.length; j++) this.traceT.push(t[j]);
+		// probes not in this chunk (just removed / not yet known to the worker) get gaps
+		for (const [c, tr] of this.traces) {
+			if (probes.includes(c)) continue;
+			for (let j = 0; j < t.length; j++) { tr.vm.push(null); for (let i = 0; i < nIons; i++) tr.cc[i].push(null); }
+		}
 		probes.forEach((c, k) => {
 			let tr = this.traces.get(c);
 			if (!tr) {
-				tr = { t: [], vm: [], cc: Array.from({ length: nIons }, () => []) };
+				tr = { vm: new Array(n0).fill(null), cc: Array.from({ length: nIons }, () => new Array(n0).fill(null)) };
 				this.traces.set(c, tr);
 			}
 			for (let j = 0; j < t.length; j++) {
 				const base = (j * probes.length + k) * stride;
-				tr.t.push(t[j]);
 				tr.vm.push(values[base]);
 				for (let i = 0; i < nIons; i++) tr.cc[i].push(values[base + 1 + i]);
 			}
@@ -94,8 +106,11 @@ export class SimSession {
 	private remapAfterCut(cellMap: Int32Array): void {
 		this.probes = this.probes.map((c) => cellMap[c]).filter((c) => c >= 0);
 		const traces = new Map<number, Trace>();
+		const colors: Record<number, string> = {};
 		for (const [c, tr] of this.traces) if (cellMap[c] >= 0) traces.set(cellMap[c], tr);
+		for (const [c, col] of Object.entries(this.probeColors)) if (cellMap[+c] >= 0) colors[cellMap[+c]] = col;
 		this.traces = traces;
+		this.probeColors = colors;
 		this.experiment.profiles = this.experiment.profiles.map((p) => ({
 			...p,
 			cells: p.cells.map((c) => cellMap[c]).filter((c) => c >= 0)
@@ -137,6 +152,7 @@ export class SimSession {
 	step(n = 1): void { this.post({ type: 'step', n }); }
 	reset(): void {
 		this.traces = new Map();
+		this.traceT = [];
 		this.traceVersion++;
 		this.error = null;
 		this.post({ type: 'load', experiment: $state.snapshot(this.experiment) });
@@ -148,8 +164,12 @@ export class SimSession {
 		if (this.probes.includes(cell)) {
 			this.probes = this.probes.filter((c) => c !== cell);
 			this.traces.delete(cell);
+			const { [cell]: _gone, ...rest } = this.probeColors;
+			this.probeColors = rest;
 		} else {
 			this.probes = [...this.probes, cell];
+			const used = new Set(Object.values(this.probeColors));
+			this.probeColors = { ...this.probeColors, [cell]: PROBE_PALETTE.find((c) => !used.has(c)) ?? PROBE_PALETTE[this.probes.length % PROBE_PALETTE.length] };
 		}
 		this.traceVersion++;
 		this.post({ type: 'probes', cells: $state.snapshot(this.probes) });

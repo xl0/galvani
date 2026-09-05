@@ -17,6 +17,7 @@ ap.add_argument('--total', type=float, default=5.0, help='init total time [s]')
 ap.add_argument('--dt', type=float, default=None, help='init time step [s]')
 ap.add_argument('--channels', action='store_true', help='enable Nav1p3 + Kv1p5 channels (network on, no substances)')
 ap.add_argument('--ions', default=None, help="ion profile, e.g. basic_Ca")
+ap.add_argument('--cav', action='store_true', help='add a Cav3p3 channel (needs --channels and --ions basic_Ca)')
 args = ap.parse_args()
 
 from betse.util.app.meta import appmetaone
@@ -44,7 +45,7 @@ if args.channels:
     net['channels'] = [
         {'name': 'Nav', 'channel class': 'Na', 'channel type': 'Nav1p3', 'max Dm': 2.0e-14, 'apply to': 'all', 'init active': True},
         {'name': 'Kv', 'channel class': 'K', 'channel type': 'Kv1p5', 'max Dm': 1.0e-15, 'apply to': 'all', 'init active': True},
-    ]
+    ] + ([{'name': 'Cav', 'channel class': 'Ca', 'channel type': 'Cav3p3', 'max Dm': 1.0e-15, 'apply to': 'all', 'init active': True}] if args.cav else [])
 if args.ions is not None:
     doc['general options']['ion profile'] = args.ions
 if args.dt is not None:
@@ -97,7 +98,7 @@ sim, cells, p = phase.sim, phase.cells, phase.p
 ions = [name for name, on in p.ions_dict.items() if on == 1]
 out = {
     'source': 'betse default config, ECM off, init phase' + (', channels Nav1p3+Kv1p5' if args.channels else '') + (f', ions {args.ions}' if args.ions else ''),
-    'channels': [{'type': 'Nav1p3', 'ion': 'Na', 'maxDm': 2.0e-14}, {'type': 'Kv1p5', 'ion': 'K', 'maxDm': 1.0e-15}] if args.channels else [],
+    'channels': ([{'type': 'Nav1p3', 'ion': 'Na', 'maxDm': 2.0e-14}, {'type': 'Kv1p5', 'ion': 'K', 'maxDm': 1.0e-15}] + ([{'type': 'Cav3p3', 'ion': 'Ca', 'maxDm': 1.0e-15}] if args.cav else [])) if args.channels else [],
     'params': {
         'dt': p.dt, 'T': p.T, 'F': p.F, 'R': p.R, 'cm': p.cm, 'tm': p.tm,
         'vol_env': p.vol_env, 'cell_height': p.cell_height,

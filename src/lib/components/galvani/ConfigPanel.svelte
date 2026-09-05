@@ -60,7 +60,7 @@
 	}
 	const hasCa = $derived(ex.ions.some((i) => i.name === 'Ca'));
 	function setIonSet(withCa: boolean) {
-		set((e) => { e.ions = structuredClone(withCa ? basicCaIons : basicIons); e.channels = e.channels.filter((ch) => (channelModels[ch.type]?.ion as string) !== 'Ca'); });
+		set((e) => { e.ions = structuredClone(withCa ? basicCaIons : basicIons); if (!withCa) e.channels = e.channels.filter((ch) => channelModels[ch.type]?.ion !== 'Ca'); });
 	}
 	function addChannel() {
 		const id = `ch${Date.now().toString(36)}`;
@@ -114,7 +114,7 @@
 			<BigField label="Initial Vm" value={ex.initialVm} scale={1e3} unit="mV" description="Starting membrane voltage. Realized by adding a little balancing anion inside each cell so the charge-capacitor relation gives this Vm at t = 0. Saves waiting a minute for the pump to polarize the cluster." onchange={(v) => set((e) => (e.initialVm = v))} />
 			<BigField label="Temperature" value={ex.params.T} unit="K" description="Sets the thermal voltage RT/F (about 26.7 mV at 310 K) that appears in every flux and Nernst equation." onchange={(v) => set((e) => (e.params.T = v))} />
 			<BigField label="Membrane capacitance" value={ex.params.cm} unit="F/m²" description="Charge per area per volt. Vm = surface charge / capacitance, so lower values make Vm swing further for the same ion movement. Real membranes are ~0.01 F/m²; BETSE uses 0.05." onchange={(v) => set((e) => (e.params.cm = v))} />
-			<BigField label="Bath volume" value={ex.params.volEnv} unit="m³" description="The extracellular medium is one well-mixed compartment of this volume. Make it small to see bath concentrations drift as cells pump; large to hold them fixed." onchange={(v) => set((e) => (e.params.volEnv = v))} />
+			<BigField label="Bath volume" value={ex.params.volEnv} scale={1e6} unit="mL" description="The extracellular medium is one well-mixed compartment of this volume (BETSE default 2.25e-7 mL, i.e. a thin film over the cluster). Make it small to see bath concentrations drift as cells pump; large to hold them fixed." onchange={(v) => set((e) => (e.params.volEnv = v))} />
 		{/snippet}
 		{#snippet explain()}
 			<h4>Time stepping</h4>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getSession } from '$lib/sim/session.svelte';
-	import { getView, PROBE_COLORS } from '$lib/sim/view.svelte';
+	import { getView } from '$lib/sim/view.svelte';
 	import { colormapLut } from '$lib/viz/colormap';
 
 	const session = getSession();
@@ -173,10 +173,10 @@
 		}
 		// probes
 		ctx.font = '10px ui-monospace, monospace';
-		session.probes.forEach((c, k) => {
+		session.probes.forEach((c) => {
 			if (c >= g.nCells) return;
 			const x = toX(g.cellCentres[2 * c]), y = toY(g.cellCentres[2 * c + 1]);
-			ctx.fillStyle = PROBE_COLORS[k % PROBE_COLORS.length];
+			ctx.fillStyle = session.probeColors[c] ?? '#888';
 			ctx.beginPath();
 			ctx.arc(x, y, 4, 0, 2 * Math.PI);
 			ctx.fill();
@@ -196,7 +196,7 @@
 		// dependencies: geometry, snapshot, view state, size, probes, profiles
 		void session.snap; void session.geom; void view.field; void view.colormap; void view.hover;
 		void view.zoom; void view.panX; void view.panY; void width; void height; void session.probes; void view.showMembranes;
-		void session.experiment.profiles; void range;
+		void session.experiment.profiles; void range; void session.probeColors;
 		draw();
 	});
 

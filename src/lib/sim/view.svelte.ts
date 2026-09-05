@@ -31,5 +31,4 @@ const KEY = Symbol('galvani-view');
 export const setView = (v: ViewState) => setContext(KEY, v);
 export const getView = () => getContext<ViewState>(KEY);
 
-export const PROBE_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#9a6324', '#469990', '#bfef45'];
 export const PROFILE_COLORS = ['#ff7f0e', '#1f77b4', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2'];

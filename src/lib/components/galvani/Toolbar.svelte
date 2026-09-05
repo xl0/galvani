@@ -14,6 +14,10 @@
 	import Scissors from '@lucide/svelte/icons/scissors';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
+	import Download from '@lucide/svelte/icons/download';
+	import Upload from '@lucide/svelte/icons/upload';
+	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+	import { exportExperimentJson, exportTracesCsv, importExperimentJson } from '$lib/export';
 
 	const session = getSession();
 	const view = getView();
@@ -38,6 +42,12 @@
 		localStorage.setItem('galvani-theme', dark ? 'dark' : 'light');
 	}
 	const speeds = [1, 5, 25, 100, 400];
+	async function doImport() {
+		try {
+			const exp = await importExperimentJson();
+			if (exp) { session.probes = []; session.setExperiment(exp); session.reset(); }
+		} catch (e) { session.error = `import failed: ${e instanceof Error ? e.message : e}`; }
+	}
 </script>
 
 <div class="flex h-10 items-center gap-1 border-b border-border px-2 text-sm">
@@ -90,6 +100,10 @@
 		</Select.Content>
 	</Select.Root>
 
+	<div class="mx-2 h-5 w-px bg-border"></div>
+	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={() => exportExperimentJson($state.snapshot(session.experiment))} title="Download this experiment as JSON"><Download class="size-4" /></Button>
+	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={doImport} title="Load an experiment JSON file"><Upload class="size-4" /></Button>
+	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={() => exportTracesCsv(session)} title="Download probe traces as CSV" disabled={session.probes.length === 0}><FileSpreadsheet class="size-4" /></Button>
 	<div class="flex-1"></div>
 	{#if session.error}<span class="truncate text-destructive" title={session.error}>{session.error}</span>{/if}
 	<span class="font-mono tabular-nums text-muted-foreground">{session.stepsPerSec ? `${session.stepsPerSec.toFixed(0)} steps/s` : ''}</span>

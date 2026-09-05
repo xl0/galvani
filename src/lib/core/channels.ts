@@ -14,7 +14,7 @@ import { ghkFlux, NONCE } from './step';
 export interface Rates { mInf: number; mTau: number; hInf: number; hTau: number }
 
 export interface ChannelModel {
-	ion: 'Na' | 'K';
+	ion: 'Na' | 'K' | 'Ca';
 	/** time-constant unit relative to seconds (1e3 = model in ms) */
 	timeUnit: number;
 	mPower: number;
@@ -111,6 +111,33 @@ export const channelModels: Record<string, ChannelModel> = {
 		rates(V) { return { mInf: 1 / (1 + Math.exp(-(V + 47) / 29)), mTau: 0.34 + 0.92 * Math.exp(-(((V + 71) / 59) ** 2)), hInf: 1 / (1 + Math.exp(-(V + 56) / -10)), hTau: 8 + 49 * Math.exp(-(((V + 73) / 23) ** 2)) }; } },
 	Kir2p1: { ion: 'K', timeUnit: 1e3, mPower: 1, hPower: 2, label: 'Kir2.1', blurb: 'Inward rectifier: open at hyperpolarized voltages, closes on depolarization. Stabilizes the resting potential.',
 		rates(V) { return { mInf: sig(V, -96.48, 23.26), mTau: 3.7 + -3.37 / (1 + Math.exp((V + 32.9) / 27.93)), hInf: sig(V, -168.28, -44.13), hTau: 0.85 + 306.3 / (1 + Math.exp((V + 118.29) / -27.23)) }; } },
+	Cav1p2: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Cav1.2', blurb: 'L-type calcium channel (cardiac/smooth muscle). High-voltage activated, slow inactivation.',
+		rates(V0) { const V = V0 - 10; return { mInf: sig(V, -30, -6), mTau: 5 + 20 / (1 + Math.exp((V + 25) / 5)), hInf: sig(V, -80, 6.4), hTau: 20 + 50 / (1 + Math.exp((V + 40) / 7)) }; } },
+	Cav1p3: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Cav1.3', blurb: 'L-type calcium channel with a lower activation threshold than Cav1.2.',
+		rates(V) { return { mInf: sig(V, -30, -6), mTau: 5 + 20 / (1 + Math.exp((V + 25) / 5)), hInf: sig(V, -80, 6.4), hTau: 20 + 50 / (1 + Math.exp((V + 40) / 7)) }; } },
+	Cav2p1: { ion: 'Ca', timeUnit: 1e3, mPower: 1, hPower: 0, label: 'Cav2.1', blurb: 'P/Q-type calcium channel, non-inactivating.',
+		rates(V) { const a = 8.5 / (1 + Math.exp((V - 8) / -12.5)), b = 35 / (1 + Math.exp((V + 74) / 14.5)); return { mInf: a / (a + b), mTau: 1 / (a + b), hInf: 1, hTau: 1 }; },
+		init(V) { const a = 8.5 / (1 + Math.exp((V - 8) / -12.5)), b = 35 / (1 + Math.exp((V + 74) / 14.5)); return { m: a / (a + b), h: 1 }; } },
+	Cav2p2: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Cav2.2', blurb: 'N-type calcium channel.',
+		rates(V) { const a = (0.1 * (V - 20)) / (1 - Math.exp(-(V - 20) / 10)), b = 0.4 * Math.exp(-(V + 25) / 18), ha = 0.01 * Math.exp(-(V + 50) / 10), hb = 0.1 / (1 + Math.exp(-(V + 17) / 17)); return { mInf: a / (a + b), mTau: 1 / (a + b), hInf: ha / (ha + hb), hTau: 1 / (ha + hb) }; } },
+	Cav2p3: { ion: 'Ca', timeUnit: 1e3, mPower: 1, hPower: 1, label: 'Cav2.3', blurb: 'R-type calcium channel.',
+		rates(V) { const a = 2.6 / (1 + Math.exp((V + 7) / -8)), b = 0.18 / (1 + Math.exp((V + 26) / 4)), ha = 0.0025 / (1 + Math.exp((V + 32) / 8)), hb = 0.19 / (1 + Math.exp((V + 42) / -10)); return { mInf: a / (a + b), mTau: 1 / (a + b), hInf: ha / (ha + hb), hTau: 1 / (ha + hb) }; } },
+	Cav3p1: { ion: 'Ca', timeUnit: 1e3, mPower: 1, hPower: 1, label: 'Cav3.1', blurb: 'T-type calcium channel: low-voltage activated, transient. Drives pacemaking and calcium spikes.',
+		rates(V) { return { mInf: sig(V, -42.921064, -5.163208), mTau: V >= -10e-3 ? 1 : -0.855809 + 1.493527 * Math.exp(-V / 27.414182), hInf: sig(V, -72.90742, 4.575763), hTau: 9.987873 + 0.002883 * Math.exp(-V / 5.598574) }; } },
+	Cav3p3: { ion: 'Ca', timeUnit: 1e3, mPower: 1, hPower: 1, label: 'Cav3.3', blurb: 'T-type calcium channel, slower kinetics than Cav3.1.',
+		rates(V) { return { mInf: sig(V, -45.454426, -5.073015), mTau: 3.394938 + 54.187616 / (1 + Math.exp((V + 40.040397) / 4.110392)), hInf: sig(V, -74.031965, 8.416382), hTau: 109.701136 + 0.003816 * Math.exp(-V / 4.781719) }; } },
+	Cav_L2: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Ca L2', blurb: 'Simplified L-type channel with fixed time constants.',
+		rates(V) { return { mInf: sig(V, -30, -6), mTau: 10, hInf: sig(V, -80, 6.4), hTau: 59 }; } },
+	Cav_L3: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Ca L3', blurb: 'Simplified L-type channel, shifted 15 mV.',
+		rates(V0) { const V = V0 - 15; return { mInf: sig(V, -30, -6), mTau: 10, hInf: sig(V, -80, 6.4), hTau: 59 }; } },
+	Cav_G: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Ca G', blurb: 'Generic high-voltage calcium channel (rate-constant form).',
+		rates(V) { const a = (0.055 * (-27 - V)) / (Math.exp((-27 - V) / 3.8) - 1), b = 0.94 * Math.exp((-75 - V) / 17), ha = 0.000457 * Math.exp((-13 - V) / 50), hb = 0.0065 / (Math.exp((-V - 15) / 28) + 1); return { mInf: a / (a + b), mTau: 1 / (a + b), hInf: ha / (ha + hb), hTau: 1 / (ha + hb) }; } },
+	CaLeak: {
+		ion: 'Ca', timeUnit: 1, mPower: 0, hPower: 0, label: 'Ca leak',
+		blurb: 'Always-open calcium permeability.',
+		rates() { return { mInf: 1, mTau: 1, hInf: 1, hTau: 1 }; },
+		init() { return { m: 1, h: 1 }; }
+	},
 	KLeak: {
 		ion: 'K', timeUnit: 1, mPower: 0, hPower: 0, label: 'K leak',
 		blurb: 'Always-open potassium permeability. The simplest way to set a negative resting potential.',

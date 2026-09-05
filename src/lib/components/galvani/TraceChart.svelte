@@ -2,7 +2,6 @@
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
 	import { getSession } from '$lib/sim/session.svelte';
-	import { PROBE_COLORS } from '$lib/sim/view.svelte';
 
 	/** One stacked chart: a series per probe for one quantity ('vm' or an ion name). */
 	let { quantity, label }: { quantity: string; label: string } = $props();
@@ -20,14 +19,13 @@
 		const probes = session.probes;
 		if (probes.length === 0) return [[]];
 		const ionIdx = session.experiment.ions.findIndex((i) => i.name === quantity);
-		const ref = probes.map((c) => session.traces.get(c)?.t ?? []);
-		const n = Math.min(...ref.map((r) => r.length));
-		const t = ref[0].slice(0, n);
+		const t = session.traceT;
+		const n = t.length;
 		const ys = probes.map((c) => {
 			const tr = session.traces.get(c);
 			if (!tr) return new Array(n).fill(null);
-			const src = quantity === 'vm' ? tr.vm.map((v) => v * 1e3) : tr.cc[ionIdx];
-			return src.slice(0, n);
+			const src = quantity === 'vm' ? tr.vm.map((v) => (v === null ? null : v * 1e3)) : tr.cc[ionIdx];
+			return src.length === n ? src : [...src, ...new Array(n - src.length).fill(null)];
 		});
 		return [t, ...ys];
 	}
@@ -35,7 +33,7 @@
 	function build() {
 		plot?.destroy();
 		const series: uPlot.Series[] = [{ label: 't' }];
-		session.probes.forEach((c, k) => series.push({ label: `${c}`, stroke: PROBE_COLORS[k % PROBE_COLORS.length], width: 1.5 }));
+		session.probes.forEach((c) => series.push({ label: `${c}`, stroke: session.probeColors[c] ?? '#888', width: 1.5 }));
 		const fg = css('--muted-foreground'), grid = css('--border');
 		const font = '10px ui-monospace, monospace';
 		plot = new uPlot(
@@ -55,7 +53,7 @@
 	}
 
 	$effect(() => {
-		void session.probes.length; void quantity; void width; void height;
+		void session.probes; void session.probeColors; void quantity; void width; void height;
 		build();
 		return () => { plot?.destroy(); plot = null; };
 	});
