@@ -6,6 +6,7 @@ import Charge from './chapters/Charge.svelte';
 import Gates from './chapters/Gates.svelte';
 import Junction from './chapters/Junction.svelte';
 import Tissue from './chapters/Tissue.svelte';
+import Solver from './chapters/Solver.svelte';
 
 export interface Chapter { slug: string; title: string; short: string; component: Component }
 
@@ -16,5 +17,6 @@ export const chapters: Chapter[] = [
 	{ slug: 'charge', title: 'Voltage from charge', short: 'Voltage from charge', component: Charge },
 	{ slug: 'gates', title: 'Gates: how a cell fires', short: 'Gates', component: Gates },
 	{ slug: 'junction', title: 'Two cells and a gap junction', short: 'Gap junctions', component: Junction },
-	{ slug: 'tissue', title: 'A tissue: waves and regions', short: 'Tissue', component: Tissue }
+	{ slug: 'tissue', title: 'A tissue: waves and regions', short: 'Tissue', component: Tissue },
+	{ slug: 'solver', title: 'What the simulator does each step', short: 'The solver', component: Solver }
 ];

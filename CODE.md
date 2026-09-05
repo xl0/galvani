@@ -28,7 +28,8 @@ BETSE (see PLAN.md, docs/adr/0001).
     on purpose (BETSE parity). Adds BETSE's 1e-25 nonce to vm in place.
   - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
     Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak, Cav1.2/1.3,
-    Cav2.1–2.3, Cav3.1/3.3, Ca L2/L3/G, Ca leak): `rates(V mV)` →
+    Cav2.1–2.3, Cav3.1/3.3, Ca L2/L3/G, Ca leak, Cl leak, HCN1/2/4 and
+    nonspecific cation leaks as multi-ion channels with relative permeabilities): `rates(V mV)` →
     gate steady states / time constants; `ChannelInstance` holds m, h, mask
     per membrane; `runChannel()` = implicit gate update, GHK flux with
     P·maxDm, applied to concentrations immediately (BETSE run_loop_channels
@@ -107,8 +108,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   The network is edited as JSON in its dialog (validated by `NetworkSchema`).
   In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
-- `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": seven
-  chapters (`chapters/*.svelte`, registry in `index.ts`), each prose + a live
+- `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": eight
+  chapters (the eighth describes the step loop and the model's limits) (`chapters/*.svelte`, registry in `index.ts`), each prose + a live
   demo. `minisim.svelte.ts` runs the real core on the main thread for 1–25
   cells (timer-driven, speed = sim s per real s, permeability-pulse
   `stimulate()`); `meshes.ts` builds one cell / two cells / a strip; the

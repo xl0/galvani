@@ -14,7 +14,10 @@ import { ghkFlux, NONCE } from './step';
 export interface Rates { mInf: number; mTau: number; hInf: number; hTau: number }
 
 export interface ChannelModel {
-	ion: 'Na' | 'K' | 'Ca';
+	/** primary ion */
+	ion: 'Na' | 'K' | 'Ca' | 'Cl';
+	/** additional ions carried with a relative permeability (HCN, nonspecific cation) */
+	extra?: { ion: 'Na' | 'K' | 'Ca' | 'Cl'; relPerm: number }[];
 	/** time-constant unit relative to seconds (1e3 = model in ms) */
 	timeUnit: number;
 	mPower: number;
@@ -132,6 +135,22 @@ export const channelModels: Record<string, ChannelModel> = {
 		rates(V0) { const V = V0 - 15; return { mInf: sig(V, -30, -6), mTau: 10, hInf: sig(V, -80, 6.4), hTau: 59 }; } },
 	Cav_G: { ion: 'Ca', timeUnit: 1e3, mPower: 2, hPower: 1, label: 'Ca G', blurb: 'Generic high-voltage calcium channel (rate-constant form).',
 		rates(V) { const a = (0.055 * (-27 - V)) / (Math.exp((-27 - V) / 3.8) - 1), b = 0.94 * Math.exp((-75 - V) / 17), ha = 0.000457 * Math.exp((-13 - V) / 50), hb = 0.0065 / (Math.exp((-V - 15) / 28) + 1); return { mInf: a / (a + b), mTau: 1 / (a + b), hInf: ha / (ha + hb), hTau: 1 / (ha + hb) }; } },
+	ClLeak: {
+		ion: 'Cl', timeUnit: 1, mPower: 0, hPower: 0, label: 'Cl leak',
+		blurb: 'Always-open chloride permeability (needs a Cl⁻ ion in the experiment).',
+		rates() { return { mInf: 1, mTau: 1, hInf: 1, hTau: 1 }; },
+		init() { return { m: 1, h: 1 }; }
+	},
+	HCN1: { ion: 'K', extra: [{ ion: 'Na', relPerm: 0.2 }, { ion: 'Ca', relPerm: 0.05 }], timeUnit: 1e3, mPower: 1, hPower: 0, label: 'HCN1', blurb: 'Hyperpolarization-activated "funny" current: opens below about −90 mV and carries Na⁺/K⁺ inward, a pacemaker current.',
+		rates(V) { return { mInf: sig(V, -94, 8.1), mTau: 30, hInf: 1, hTau: 1 }; }, init(V) { return { m: sig(V, -94, 8.1), h: 1 }; } },
+	HCN2: { ion: 'K', extra: [{ ion: 'Na', relPerm: 0.2 }, { ion: 'Ca', relPerm: 0.05 }], timeUnit: 1e3, mPower: 1, hPower: 0, label: 'HCN2', blurb: 'Hyperpolarization-activated current, slower than HCN1.',
+		rates(V0) { const V = V0 - 10; return { mInf: sig(V, -99, 6.2), mTau: 184, hInf: 1, hTau: 1 }; }, init(V0) { return { m: sig(V0 - 10, -99, 6.2), h: 1 }; } },
+	HCN4: { ion: 'K', extra: [{ ion: 'Na', relPerm: 0.2 }, { ion: 'Ca', relPerm: 0.05 }], timeUnit: 1e3, mPower: 1, hPower: 0, label: 'HCN4', blurb: 'Hyperpolarization-activated current, the slowest isoform (cardiac pacemaker).',
+		rates(V0) { const V = V0 - 10; return { mInf: sig(V, -100, 9.6), mTau: 461, hInf: 1, hTau: 1 }; }, init(V0) { return { m: sig(V0 - 10, -100, 9.6), h: 1 }; } },
+	CatLeak: { ion: 'Na', extra: [{ ion: 'K', relPerm: 1 }], timeUnit: 1, mPower: 0, hPower: 0, label: 'Cation leak', blurb: 'Nonspecific cation leak (Na⁺ and K⁺ equally): pulls Vm toward 0.',
+		rates() { return { mInf: 1, mTau: 1, hInf: 1, hTau: 1 }; }, init() { return { m: 1, h: 1 }; } },
+	CatLeak2: { ion: 'Na', extra: [{ ion: 'K', relPerm: 1 }, { ion: 'Ca', relPerm: 1 }], timeUnit: 1, mPower: 0, hPower: 0, label: 'Cation leak (+Ca)', blurb: 'Nonspecific cation leak including Ca²⁺.',
+		rates() { return { mInf: 1, mTau: 1, hInf: 1, hTau: 1 }; }, init() { return { m: 1, h: 1 }; } },
 	CaLeak: {
 		ion: 'Ca', timeUnit: 1, mPower: 0, hPower: 0, label: 'Ca leak',
 		blurb: 'Always-open calcium permeability.',
@@ -153,6 +172,8 @@ export interface ChannelInstance {
 	type: string;
 	model: ChannelModel;
 	ionIndex: number;
+	/** other carried ions present in the experiment, with relative permeability */
+	extra: { ionIndex: number; relPerm: number }[];
 	/** permeability when fully open [m2/s] */
 	maxDm: number;
 	/** 1 on membranes that express the channel, else 0 */
@@ -173,8 +194,9 @@ export function createChannel(id: string, type: string, maxDm: number, ions: Ion
 	const ionIndex = ions.findIndex((i) => i.name === model.ion);
 	if (ionIndex < 0) throw new Error(`channel ${type} needs ion ${model.ion}`);
 	const n = vm.length;
+	const extra = (model.extra ?? []).flatMap((e) => { const k = ions.findIndex((i) => i.name === e.ion); return k >= 0 ? [{ ionIndex: k, relPerm: e.relPerm }] : []; });
 	const ch: ChannelInstance = {
-		id, type, model, ionIndex, maxDm,
+		id, type, model, ionIndex, extra, maxDm,
 		mask: new Float64Array(n).fill(1), modulator: new Float64Array(n).fill(1), m: new Float64Array(n), h: new Float64Array(n), P: new Float64Array(n), flux: new Float64Array(n)
 	};
 	for (let k = 0; k < n; k++) {
@@ -199,28 +221,31 @@ export function runChannel(ch: ChannelInstance, mesh: Mesh, ions: Ion[], p: Para
 	const { nMems } = mesh;
 	const model = ch.model;
 	const dtu = p.dt * model.timeUnit;
-	const i = ch.ionIndex;
-	const z = ions[i].z + NONCE;
-	const RT = R * p.T;
-	const cA = s.ccEnv[i];
-	const cc = s.ccCells[i];
-	const cmem = s.ccAtMem[i];
-	const flux = ch.flux;
 	for (let k = 0; k < nMems; k++) {
 		const r = model.rates(s.vm[k] * 1e3);
 		ch.m[k] = (r.mTau * ch.m[k] + dtu * r.mInf) / (r.mTau + dtu);
 		ch.h[k] = (r.hTau * ch.h[k] + dtu * r.hInf) / (r.hTau + dtu);
-		const P = ch.m[k] ** model.mPower * ch.h[k] ** model.hPower * ch.mask[k];
-		ch.P[k] = P;
-		s.vm[k] += NONCE;
-		flux[k] = ghkFlux(cA, cc[mesh.memToCell[k]], P * ch.maxDm * ch.modulator[k], p.tm, z, s.vm[k], RT);
+		ch.P[k] = ch.m[k] ** model.mPower * ch.h[k] ** model.hPower * ch.mask[k];
 	}
-	let envSum = 0;
-	for (let k = 0; k < nMems; k++) {
-		const c = mesh.memToCell[k];
-		cc[c] += (flux[k] * mesh.memSa[k] * p.dt) / mesh.cellVol[c];
-		envSum += (-flux[k] * mesh.memSa[k]) / p.volEnv;
+	// one GHK flux + update_Co per carried ion, in BETSE's order (primary first)
+	for (const { ionIndex: i, relPerm } of [{ ionIndex: ch.ionIndex, relPerm: 1 }, ...ch.extra]) {
+		const z = ions[i].z + NONCE;
+		const RT = R * p.T;
+		const cA = s.ccEnv[i];
+		const cc = s.ccCells[i];
+		const flux = ch.flux;
+		for (let k = 0; k < nMems; k++) {
+			s.vm[k] += NONCE;
+			flux[k] = ghkFlux(cA, cc[mesh.memToCell[k]], ch.P[k] * relPerm * ch.maxDm * ch.modulator[k], p.tm, z, s.vm[k], RT);
+		}
+		let envSum = 0;
+		for (let k = 0; k < nMems; k++) {
+			const c = mesh.memToCell[k];
+			cc[c] += (flux[k] * mesh.memSa[k] * p.dt) / mesh.cellVol[c];
+			envSum += (-flux[k] * mesh.memSa[k]) / p.volEnv;
+		}
+		const cmem = s.ccAtMem[i];
+		for (let k = 0; k < nMems; k++) cmem[k] = cc[mesh.memToCell[k]];
+		s.ccEnv[i] += (envSum / nMems) * p.dt;
 	}
-	for (let k = 0; k < nMems; k++) cmem[k] = cc[mesh.memToCell[k]];
-	s.ccEnv[i] += (envSum / nMems) * p.dt;
 }
