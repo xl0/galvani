@@ -22,11 +22,12 @@
 	const unit = $derived(view.field === 'vm' ? 'mV' : view.field.startsWith('P:') ? 'open' : 'mM');
 </script>
 
-<div class="grid h-screen w-screen grid-cols-[360px_minmax(0,1fr)_400px] grid-rows-[auto_minmax(0,1fr)_auto] bg-background text-foreground">
+<div class="workbench grid h-screen w-screen grid-cols-[360px_minmax(0,1fr)_400px] grid-rows-[auto_minmax(0,1fr)_auto] bg-background text-foreground">
 	<div class="row-span-3 border-r border-border">
 		<div class="flex h-10 items-center gap-2 border-b border-border px-3">
 			<span class="text-base font-semibold tracking-tight">Galvani</span>
 			<input class="min-w-0 flex-1 bg-transparent text-sm outline-none" value={session.experiment.name} onchange={(e) => session.edit((x) => (x.name = (e.target as HTMLInputElement).value))} />
+			<a href="/learn" class="text-xs text-muted-foreground underline decoration-dotted underline-offset-2" title="How the model works, from ions to tissues">learn</a>
 		</div>
 		<div class="h-[calc(100vh-2.5rem)]"><ConfigPanel /></div>
 	</div>

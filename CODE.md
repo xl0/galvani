@@ -94,6 +94,13 @@ BETSE (see PLAN.md, docs/adr/0001).
   needs the canvas) using compact `NumField`s with tooltips.
   In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
+- `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": seven
+  chapters (`chapters/*.svelte`, registry in `index.ts`), each prose + a live
+  demo. `minisim.svelte.ts` runs the real core on the main thread for 1–25
+  cells (timer-driven, speed = sim s per real s, permeability-pulse
+  `stimulate()`); `meshes.ts` builds one cell / two cells / a strip; the
+  `components/learn/` set is `Lesson` (two-column layout), `MiniChart`,
+  `MiniCluster`, `Slider`.
 - `src/lib/components/ui/` — shadcn-svelte components (style "nova", base
   zinc, radius small; `components.json`). Theme tokens live in `src/app.css`.
   Add components with `bunx shadcn-svelte@latest add <name> -y`.
