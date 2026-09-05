@@ -4,6 +4,7 @@
 	import type { SimEvent } from '$lib/core/experiment';
 	import { ghkVoltage, nernst } from '$lib/core/derived';
 	import { presets } from '$lib/presets';
+	import { channelModels, channelTypes } from '$lib/core/channels';
 	import { fmt } from '$lib/format';
 	import BigField from './BigField.svelte';
 	import NumField from './NumField.svelte';
@@ -56,6 +57,10 @@
 			else e.events.push({ kind, t: t + 1, tEnd: t + 6, profile: '', factor: 0 });
 		});
 	}
+	function addChannel() {
+		const id = `ch${Date.now().toString(36)}`;
+		set((e) => e.channels.push({ id, type: 'Kv1p5', maxDm: 1e-15, profile: '', enabled: true }));
+	}
 	const eventLabel: Record<SimEvent['kind'], string> = { perm: 'permeability ×', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells' };
 	const inputCls = 'h-7 w-full min-w-0 rounded-md border border-input bg-background px-1.5 font-mono text-sm tabular-nums';
 </script>
@@ -97,10 +102,11 @@
 	</SettingsDialog>
 
 	<SettingsDialog title="Run" blurb="Time stepping and the physical constants that set the scale of the response.">
-		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · end {fmt(ex.endTime, 3)} s · {fmt(ex.params.T, 3)} K · Cm {fmt(ex.params.cm, 2)} F/m²{/snippet}
+		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T, 3)} K{/snippet}
 		{#snippet form()}
 			<BigField label="Time step" value={ex.params.dt} unit="s" description="Integration step. Smaller is more accurate and slower. With default permeabilities, steps above ~0.01 s go unstable (Vm explodes, run halts)." onchange={(v) => set((e) => (e.params.dt = v))} />
 			<BigField label="End time" value={ex.endTime} unit="s" description="The run pauses when simulated time reaches this. Press Run again to restart from zero." onchange={(v) => set((e) => (e.endTime = v))} />
+			<BigField label="Initial Vm" value={ex.initialVm} scale={1e3} unit="mV" description="Starting membrane voltage. Realized by adding a little balancing anion inside each cell so the charge-capacitor relation gives this Vm at t = 0. Saves waiting a minute for the pump to polarize the cluster." onchange={(v) => set((e) => (e.initialVm = v))} />
 			<BigField label="Temperature" value={ex.params.T} unit="K" description="Sets the thermal voltage RT/F (about 26.7 mV at 310 K) that appears in every flux and Nernst equation." onchange={(v) => set((e) => (e.params.T = v))} />
 			<BigField label="Membrane capacitance" value={ex.params.cm} unit="F/m²" description="Charge per area per volt. Vm = surface charge / capacitance, so lower values make Vm swing further for the same ion movement. Real membranes are ~0.01 F/m²; BETSE uses 0.05." onchange={(v) => set((e) => (e.params.cm = v))} />
 			<BigField label="Bath volume" value={ex.params.volEnv} unit="m³" description="The extracellular medium is one well-mixed compartment of this volume. Make it small to see bath concentrations drift as cells pump; large to hold them fixed." onchange={(v) => set((e) => (e.params.volEnv = v))} />
@@ -202,6 +208,49 @@
 			<p>With gating on, each junction has an open fraction that relaxes toward a voltage-dependent steady state: near-fully open below the threshold, closing exponentially above it. This is how tissues electrically isolate a strongly depolarized (for example injured) region.</p>
 			<h4>Regions and events</h4>
 			<p>The "junctions ×" multiplier on a region scales coupling for its cells; a GJ event does the same for a time window. Set it to 0 to see an isolated patch keep its own voltage.</p>
+		{/snippet}
+	</SettingsDialog>
+
+	<SettingsDialog title="Ion channels" blurb="Voltage-gated channels open and close with Vm, changing an ion's permeability on the fly. This is what makes the tissue excitable.">
+		{#snippet summary()}
+			{#if ex.channels.length === 0}none{:else}{ex.channels.filter((c) => c.enabled).map((c) => `${channelModels[c.type]?.label ?? c.type} ${fmt(c.maxDm, 2)}`).join(' · ')}{/if}
+		{/snippet}
+		{#snippet actions()}<Button size="sm" variant="ghost" class="h-7 px-1.5 text-xs" onclick={addChannel} title="Add a channel population"><Plus class="size-3.5" /> add</Button>{/snippet}
+		{#snippet form()}
+			{#if ex.channels.length === 0}<div class="text-sm text-muted-foreground">No channels yet. Add one; Kv1.5 + Nav1.3 + a K leak on a −60 mV cluster gives action potentials.</div>{/if}
+			{#each ex.channels as ch, ci (ch.id)}
+				<div class="mb-3 rounded-md border border-border p-3">
+					<div class="flex items-center gap-2">
+						<input type="checkbox" checked={ch.enabled} onchange={(e) => set((x) => (x.channels[ci].enabled = (e.target as HTMLInputElement).checked))} title="Enabled" />
+						<select class="h-8 rounded-md border border-input bg-background px-2 text-sm" value={ch.type} onchange={(e) => set((x) => (x.channels[ci].type = (e.target as HTMLSelectElement).value))}>
+							{#each channelTypes as t (t)}<option value={t}>{channelModels[t].label} ({channelModels[t].ion}⁺)</option>{/each}
+						</select>
+						<select class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm" value={ch.profile} onchange={(e) => set((x) => (x.channels[ci].profile = (e.target as HTMLSelectElement).value))}>
+							<option value="">all cells</option>
+							{#each ex.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+						</select>
+						<Button size="sm" variant="ghost" class="h-8 px-1.5" onclick={() => set((x) => x.channels.splice(ci, 1))} title="Delete channel"><Trash class="size-4" /></Button>
+					</div>
+					<div class="mt-1 text-sm text-muted-foreground">{channelModels[ch.type]?.blurb}</div>
+					<BigField label="Max permeability" value={ch.maxDm} unit="m²/s" description="Permeability of the ion when the channel is fully open. Compare with the ion's resting permeability (Na 2e-18, K 1e-18 by default): 1e-15 is a strong K channel, 2e-14 a strong Na channel." onchange={(v) => set((x) => (x.channels[ci].maxDm = v))} />
+				</div>
+			{/each}
+			<Button size="sm" variant="outline" onclick={addChannel}><Plus class="size-4" /> add channel</Button>
+		{/snippet}
+		{#snippet explain()}
+			<h4>Hodgkin-Huxley gating</h4>
+			<p>Each channel population has two gates per membrane segment: an activation gate <code>m</code> and an inactivation gate <code>h</code>. At any voltage each gate has a steady-state value and a time constant; every step it relaxes toward that steady state. The open fraction is <code>P = m<sup>a</sup>·h<sup>b</sup></code>, and the ion's permeability on that membrane gets <code>P × max permeability</code> added.</p>
+			<h4>Where the models come from</h4>
+			<p>The rate functions are BETSE's, which transcribed them from Channelpedia (EPFL) fits to patch-clamp data on cloned channels. Voltages in the models are in mV and time constants in ms; the simulator converts.</p>
+			<h4>Excitability recipe</h4>
+			<ul>
+				<li>Set <b>Initial Vm</b> (Run) to −60 mV or add a <b>K leak</b> channel so the resting potential is negative. Nav channels are inactivated at 0 mV and never open otherwise.</li>
+				<li>Add <b>Nav1.3</b> (2e-14) for the upstroke and <b>Kv1.5</b> (1e-15) for repolarization.</li>
+				<li>Use a small time step (1e-4 s): gates move on the millisecond scale.</li>
+				<li>Trigger with an Events → permeability pulse of Na⁺ on a region. The spike propagates to neighbours through gap junctions.</li>
+			</ul>
+			<h4>Regions</h4>
+			<p>A channel assigned to a region is expressed only on that region's membranes; elsewhere its open fraction is forced to zero. Gates keep evolving everywhere so switching regions is seamless.</p>
 		{/snippet}
 	</SettingsDialog>
 

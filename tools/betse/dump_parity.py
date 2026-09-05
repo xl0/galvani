@@ -14,6 +14,8 @@ ap.add_argument('out')
 ap.add_argument('--steps', type=int, default=50, help='record every step up to here')
 ap.add_argument('--every', type=int, default=50, help='then record every K-th step')
 ap.add_argument('--total', type=float, default=5.0, help='init total time [s]')
+ap.add_argument('--dt', type=float, default=None, help='init time step [s]')
+ap.add_argument('--channels', action='store_true', help='enable Nav1p3 + Kv1p5 channels (network on, no substances)')
 args = ap.parse_args()
 
 from betse.util.app.meta import appmetaone
@@ -31,7 +33,19 @@ yaml = ruamel.yaml.YAML()
 with open(conf) as f:
     doc = yaml.load(f)
 doc['general options']['simulate extracellular spaces'] = False
-doc['general network']['implement network'] = False
+doc['general network']['implement network'] = args.channels
+if args.channels:
+    net = doc['general network']
+    net['biomolecules'] = []
+    net['reactions'] = None
+    net['transporters'] = None
+    net['modulators'] = None
+    net['channels'] = [
+        {'name': 'Nav', 'channel class': 'Na', 'channel type': 'Nav1p3', 'max Dm': 2.0e-14, 'apply to': 'all', 'init active': True},
+        {'name': 'Kv', 'channel class': 'K', 'channel type': 'Kv1p5', 'max Dm': 1.0e-15, 'apply to': 'all', 'init active': True},
+    ]
+if args.dt is not None:
+    doc['init time settings']['time step'] = args.dt
 doc['init time settings']['total time'] = args.total
 doc['init time settings']['sampling rate'] = 1.0  # storage unused; we record via hook
 with open(conf, 'w') as f:
@@ -79,7 +93,8 @@ sim, cells, p = phase.sim, phase.cells, phase.p
 
 ions = [name for name, on in p.ions_dict.items() if on == 1]
 out = {
-    'source': 'betse default config, ECM off, init phase',
+    'source': 'betse default config, ECM off, init phase' + (', channels Nav1p3+Kv1p5' if args.channels else ''),
+    'channels': [{'type': 'Nav1p3', 'ion': 'Na', 'maxDm': 2.0e-14}, {'type': 'Kv1p5', 'ion': 'K', 'maxDm': 1.0e-15}] if args.channels else [],
     'params': {
         'dt': p.dt, 'T': p.T, 'F': p.F, 'R': p.R, 'cm': p.cm, 'tm': p.tm,
         'vol_env': p.vol_env, 'cell_height': p.cell_height,

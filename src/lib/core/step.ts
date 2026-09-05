@@ -3,6 +3,7 @@ import type { Ion, Params } from './params';
 import { F, R } from './params';
 import type { SimState } from './state';
 import { updateV } from './state';
+import { runChannel, type ChannelInstance } from './channels';
 
 /**
  * BETSE parity notes: BETSE adds 1e-25 in place to the voltage array in
@@ -10,7 +11,7 @@ import { updateV } from './state';
  * trajectories agree to round-off. Order of operations mirrors
  * Simulator._run_sim_core_loop for the ECM-off, full-solver case.
  */
-const NONCE = 1e-25;
+export const NONCE = 1e-25;
 
 // Harris et al. 1983 gap-junction gating constants (axolotl embryo).
 const GJ_LAMB = 0.0013;
@@ -20,7 +21,7 @@ const GJ_A2 = 0.14;
 export class UnstableError extends Error {}
 
 /** Advance the state by one forward-Euler step of length p.dt. */
-export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState): void {
+export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: ChannelInstance[] = []): void {
 	const { nMems, nCells } = mesh;
 	const RT = R * p.T;
 	const dt = p.dt;
@@ -100,6 +101,9 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState): void {
 		const cc = s.ccCells[i];
 		for (let m = 0; m < nMems; m++) cmem[m] = cc[mesh.memToCell[m]];
 	}
+
+	// ---- voltage-gated channels (BETSE network run_loop_channels) --------
+	for (const ch of channels) runChannel(ch, mesh, ions, p, s);
 
 	// ---- apply fluxes to concentrations (BETSE update_all_concs) ---------
 	for (let i = 0; i < nIons; i++) {

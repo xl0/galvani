@@ -27,6 +27,17 @@ export const EventSchema = z.discriminatedUnion('kind', [
 ]);
 export type SimEvent = z.infer<typeof EventSchema>;
 
+/** A voltage-gated channel population. `profile` = '' means every membrane. */
+export const ChannelSchema = z.object({
+	id: z.string(),
+	type: z.string(),
+	/** permeability when fully open [m2/s] */
+	maxDm: z.number().nonnegative(),
+	profile: z.string(),
+	enabled: z.boolean().default(true)
+});
+export type ChannelConfig = z.infer<typeof ChannelSchema>;
+
 const IonSchema = z.object({
 	name: z.string(), z: z.number(), Dfree: z.number(), Dm: z.number(), cCell: z.number(), cEnv: z.number()
 });
@@ -51,7 +62,10 @@ export const ExperimentSchema = z.object({
 	/** run end time [s] */
 	endTime: z.number().positive(),
 	profiles: z.array(ProfileSchema),
-	events: z.array(EventSchema)
+	events: z.array(EventSchema),
+	channels: z.array(ChannelSchema).default([]),
+	/** starting membrane voltage [V]; realized by offsetting the balancing anion per cell */
+	initialVm: z.number().default(0)
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
 
@@ -63,13 +77,16 @@ export const defaultExperiment: Experiment = {
 	params: basicParams,
 	endTime: 60,
 	profiles: [],
-	events: []
+	events: [],
+	channels: [],
+	initialVm: 0
 };
 
 /** Changes to these require rebuilding mesh and state rather than a live update. */
 export function needsReload(a: Experiment, b: Experiment): boolean {
 	return (
 		JSON.stringify(a.generator) !== JSON.stringify(b.generator) ||
+		a.initialVm !== b.initialVm ||
 		a.ions.length !== b.ions.length ||
 		a.ions.some((x, i) => x.name !== b.ions[i].name || x.z !== b.ions[i].z || x.cCell !== b.ions[i].cCell || x.cEnv !== b.ions[i].cEnv || x.Dfree !== b.ions[i].Dfree)
 	);

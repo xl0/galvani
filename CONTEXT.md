@@ -21,8 +21,11 @@ details live in CODE.md.
   permeability, free diffusion constant. Ion set is fixed per experiment.
   "P" (impermeant proteins) and "M" (balancing anion) are BETSE conventions.
 - **Pump** — active transporter; v1 only Na/K-ATPase (3 Na out, 2 K in).
-- **Channel** — voltage-gated modulator of a membrane's permeability to one
-  ion (Hodgkin-Huxley gates). Phase 2.
+- **Channel** — a voltage-gated population on a set of membranes: Hodgkin-
+  Huxley gates m, h per membrane give an open fraction P; the ion's
+  permeability gets P × max permeability. Assigned to all cells or a region.
+- **Initial Vm** — the membrane voltage the cluster starts at, produced by a
+  small per-cell anion offset rather than by running the pump.
 - **Tissue profile** — a named set of cells with membrane parameter overrides
   (permeabilities, pump rate, GJ). Painted in the UI.
 - **Event** — a timed intervention on the run timeline: permeability change,

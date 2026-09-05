@@ -5,9 +5,9 @@ import type { SimState } from './state';
  * Remove a set of cells from the mesh (a wound / BETSE "cut" event).
  * Returns the reduced mesh and a state whose arrays are re-indexed to it.
  * Membranes that faced a removed cell become boundary membranes.
- * cellMap[old] = new index or -1 for removed cells.
+ * cellMap[old] / memMap[old] = new index or -1 for removed cells / membranes.
  */
-export function cutCells(mesh: Mesh, s: SimState, removed: Set<number>): { mesh: Mesh; state: SimState; cellMap: Int32Array } {
+export function cutCells(mesh: Mesh, s: SimState, removed: Set<number>): { mesh: Mesh; state: SimState; cellMap: Int32Array; memMap: Int32Array } {
 	const cellMap = new Int32Array(mesh.nCells).fill(-1);
 	let nCells = 0;
 	for (let c = 0; c < mesh.nCells; c++) if (!removed.has(c)) cellMap[c] = nCells++;
@@ -91,5 +91,5 @@ export function cutCells(mesh: Mesh, s: SimState, removed: Set<number>): { mesh:
 		rhoCells: pickCell(s.rhoCells),
 		vgj: pickMem(s.vgj)
 	};
-	return { mesh: newMesh, state, cellMap };
+	return { mesh: newMesh, state, cellMap, memMap };
 }

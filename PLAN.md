@@ -60,4 +60,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Usability pass: presets, summary cards + explanatory settings dialogs, Nernst/GHK readouts, stacked traces, 14px base
 - [ ] Polish: membrane-level rendering (per-membrane Vm), fixed-range editing, trace export,
       relative (x) controls instead of raw SI, keyboard shortcuts; rerun parity after any step.ts change
-- [ ] Phase 2: HH channels, Ca; fast equivalent-circuit solver; env grid
+- [x] HH channels (BETSE Na/K families) with parity fixture; initial Vm; excitable preset
+- [ ] Ca2+ + Ca-ATPase (basic_Ca profile) with parity fixture
+- [ ] Per-membrane Vm rendering; channel open-fraction field
+- [ ] Later: fast equivalent-circuit solver; env grid; channel Ca/Cl/HCN families

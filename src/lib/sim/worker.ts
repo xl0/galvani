@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { createChannel, type ChannelInstance } from '$lib/core/channels';
 import { cutCells } from '$lib/core/cut';
 import { applyModulation, type Experiment } from '$lib/core/experiment';
 import { generateMesh } from '$lib/core/generator';
@@ -15,6 +16,7 @@ let stepsPerTick = 25;
 let probes: number[] = [];
 const firedCuts = new Set<number>();
 let hasTimedEvents = false;
+let channels: ChannelInstance[] = [];
 
 // trace accumulation between snapshots
 let traceT: number[] = [];
@@ -59,11 +61,13 @@ function snapshot(): void {
 function load(e: Experiment): void {
 	exp = e;
 	mesh = generateMesh(e.generator);
-	state = createState(mesh, e.ions);
+	state = createState(mesh, e.ions, e.initialVm, e.params.cm);
 	firedCuts.clear();
 	hasTimedEvents = e.events.some((ev) => ev.kind !== 'cut');
 	applyModulation(mesh, exp, state, 0);
 	updateV(mesh, e.ions, e.params, state);
+	channels = [];
+	syncChannels();
 	probes = probes.filter((c) => c < mesh.nCells);
 	traceT = []; traceV = [];
 	running = false;
@@ -71,10 +75,31 @@ function load(e: Experiment): void {
 	snapshot();
 }
 
+/** Reconcile channel instances with the experiment: keep gates of existing ids, init new ones at current vm. */
+function syncChannels(): void {
+	const cellProfile = new Int32Array(mesh.nCells).fill(-1);
+	exp.profiles.forEach((p, pi) => { for (const c of p.cells) if (c < mesh.nCells) cellProfile[c] = pi; });
+	const next: ChannelInstance[] = [];
+	for (const cfg of exp.channels) {
+		if (!cfg.enabled) continue;
+		let ch = channels.find((x) => x.id === cfg.id && x.type === cfg.type);
+		if (!ch) {
+			try { ch = createChannel(cfg.id, cfg.type, cfg.maxDm, exp.ions, state.vm); }
+			catch (err) { post({ type: 'error', message: String(err) }); continue; }
+		}
+		ch.maxDm = cfg.maxDm;
+		const prof = cfg.profile === '' ? null : exp.profiles.findIndex((p) => p.id === cfg.profile);
+		for (let m = 0; m < mesh.nMems; m++) ch.mask[m] = prof === null || cellProfile[mesh.memToCell[m]] === prof ? 1 : 0;
+		next.push(ch);
+	}
+	channels = next;
+}
+
 function update(e: Experiment): void {
 	exp = e;
 	hasTimedEvents = e.events.some((ev) => ev.kind !== 'cut');
 	applyModulation(mesh, exp, state, state.t);
+	syncChannels();
 	if (!running) snapshot();
 }
 
@@ -89,7 +114,11 @@ function doCut(cells: Iterable<number>): void {
 		profiles: exp.profiles.map((p) => ({ ...p, cells: p.cells.map((c) => r.cellMap[c]).filter((c) => c >= 0) }))
 	};
 	probes = probes.map((c) => r.cellMap[c]).filter((c) => c >= 0);
+	// re-index channel gate arrays to the surviving membranes
+	const pick = (src: Float64Array) => { const out = new Float64Array(mesh.nMems); for (let m = 0; m < r.memMap.length; m++) if (r.memMap[m] >= 0) out[r.memMap[m]] = src[m]; return out; };
+	channels = channels.map((ch) => ({ ...ch, mask: pick(ch.mask), m: pick(ch.m), h: pick(ch.h), P: pick(ch.P), flux: new Float64Array(mesh.nMems) }));
 	applyModulation(mesh, exp, state, state.t);
+	syncChannels();
 	geom('cut', r.cellMap);
 }
 
@@ -116,7 +145,7 @@ function sampleTrace(): void {
 function doStep(): boolean {
 	fireEvents();
 	try {
-		step(mesh, exp.ions, exp.params, state);
+		step(mesh, exp.ions, exp.params, state, channels);
 	} catch (err) {
 		running = false;
 		post({ type: 'error', message: err instanceof UnstableError ? err.message : String(err) });

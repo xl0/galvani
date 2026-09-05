@@ -24,11 +24,19 @@ BETSE (see PLAN.md, docs/adr/0001).
     membrane conc := cell conc; then apply fluxes (cells, well-mixed bath,
     then GJ), clamp negatives, updateV. `ccAtMem` lags GJ flux by one step,
     on purpose (BETSE parity). Adds BETSE's 1e-25 nonce to vm in place.
+  - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
+    Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak): `rates(V mV)` →
+    gate steady states / time constants; `ChannelInstance` holds m, h, mask
+    per membrane; `runChannel()` = implicit gate update, GHK flux with
+    P·maxDm, applied to concentrations immediately (BETSE run_loop_channels
+    order: after the ion loop, before update_all_concs).
   - `betse.ts` — loads parity fixtures into Mesh / Params / Ion / SimState.
-  - `*.test.ts` — parity test (tolerances ~1e-10, measured ~1e-12) and
-    generator invariants.
+  - `*.test.ts` — parity tests (basic, and Nav1p3+Kv1p5 channels; tolerances
+    ~1e-10, measured ~1e-12, with a negative control) and generator/cut invariants.
 - `tests/fixtures/betse-basic.json` — BETSE default config, ECM off, molecule
   network off, init phase: geometry, params, t0 state, 59 snapshots / 500 steps.
+  `betse-channels.json` — same with the network on, no substances, Nav1p3 (2e-14)
+  + Kv1p5 (1e-15) active during init (`dump.sh <out> --channels`).
 - `tools/betse/` — `setup.sh` builds `.venv` (uv) from the cached BETSE
   checkout; `dump.sh` regenerates the fixture via `dump_parity.py`, which hooks
   BETSE's `check_v` (called once per step) to snapshot state. BETSE needs a
@@ -48,7 +56,7 @@ BETSE (see PLAN.md, docs/adr/0001).
   applies edits (`edit()`), debounces the URL hash; `view.svelte.ts` display
   state (field, colormap, tool, brush, zoom/pan, range).
 - `src/lib/presets.ts` — starter experiments (resting, leaky K+ patch, Na+
-  pulse, wound); region cells are picked by generating the mesh on the main
+  pulse, excitable sheet with action potentials, wound); region cells are picked by generating the mesh on the main
   thread. Loading a preset always resets the run.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
@@ -68,6 +76,13 @@ BETSE (see PLAN.md, docs/adr/0001).
   Add components with `bunx shadcn-svelte@latest add <name> -y`.
 
 ## Non-obvious
+
+- `initialVm` in the experiment is realized in `createState()` by adding
+  balancing anion (M) per cell so that rho·diviterm/cm equals it: an instant
+  polarized cluster without waiting for the pump.
+- Channel instances live in the worker (`syncChannels()`): matched by id+type
+  across live updates so gates persist; new ones init at the current vm;
+  region masks recomputed from profiles; gate arrays re-indexed on cut.
 
 - Cell indices change after a cut: worker and session both remap profiles,
   probes and traces through `cellMap`. Anything else holding cell ids must too.

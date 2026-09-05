@@ -4,6 +4,7 @@ import type { Ion, Params } from './params';
 import { createState, type SimState } from './state';
 
 export interface BetseFixture {
+	channels?: { type: string; ion: string; maxDm: number }[];
 	params: Record<string, number | boolean>;
 	ions: { name: string; z: number; D_free: number; Dm: number; c_cell: number; c_env: number }[];
 	mesh: {

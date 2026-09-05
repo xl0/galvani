@@ -35,7 +35,11 @@ export interface SimState {
 	vgj: Float64Array;
 }
 
-export function createState(mesh: Mesh, ions: Ion[]): SimState {
+/**
+ * Fresh state with uniform concentrations. `initialVm` [V] is realized by adding
+ * balancing anion ("M", or the last anion) so that rho*diviterm/cm = initialVm per cell.
+ */
+export function createState(mesh: Mesh, ions: Ion[], initialVm = 0, cm = 0.05): SimState {
 	const { nCells, nMems } = mesh;
 	const n = ions.length;
 	const per = (len: number, fill = 0) => Array.from({ length: n }, () => new Float64Array(len).fill(fill));
@@ -58,6 +62,18 @@ export function createState(mesh: Mesh, ions: Ion[]): SimState {
 		rhoCells: new Float64Array(nCells),
 		vgj: new Float64Array(nMems)
 	};
+	if (initialVm !== 0) {
+		let ia = ions.findIndex((i) => i.name === 'M');
+		if (ia < 0) ia = ions.findIndex((i) => i.z < 0);
+		if (ia >= 0) {
+			const z = ions[ia].z;
+			for (let c = 0; c < nCells; c++) {
+				// Vm = rho * diviterm / cm  ->  rho = Vm * cm / diviterm, dc = rho / (z F)
+				s.ccCells[ia][c] += (initialVm * cm) / mesh.diviterm[c] / (z * F);
+			}
+			for (let m = 0; m < nMems; m++) s.ccAtMem[ia][m] = s.ccCells[ia][mesh.memToCell[m]];
+		}
+	}
 	return s;
 }
 
