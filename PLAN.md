@@ -32,7 +32,7 @@ Validated against BETSE (venv at /home/xl0/pi-qa, source ~/.cache/checkouts/gith
          vitest loads mesh, runs Galvani step loop, compares Vm/concs within tolerance
    - [x] Reference: BETSE default config with ECM off, init phase Vm + ion conc traces
 6. UI
-   - [x] Canvas2D behind small renderer interface; uPlot for traces
+   - [x] Canvas2D for the cluster view and for the trace charts (no chart library)
    - [x] 3-pane workbench (config | canvas+toolbar | traces). Interactions: probe cells -> live traces,
          live param edits while running, paint tissue profiles, cut cells mid-run
 7. Tooling
@@ -55,7 +55,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Parity test: 451 steps, |dVm| ~1e-12 V, rel dconc ~1e-14 (tolerances 1e-10 / 1e-11)
 - [x] shadcn-svelte (zinc, nova), compact 13px base, light/dark toggle
 - [x] Worker + snapshot protocol; zod experiment schema; deflate+base64url URL hash
-- [x] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + uPlot traces
+- [x] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + traces
 - [x] Profiles painting, cut brush, timed events (perm / pump / GJ factor, cut)
 - [x] Usability pass: presets, summary cards + explanatory settings dialogs, Nernst/GHK readouts, stacked traces, 14px base
 - [x] Fixed-range editing (freeze), trace CSV export, experiment JSON import/export, Cav channels

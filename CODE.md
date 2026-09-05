@@ -1,7 +1,7 @@
 # Galvani — code overview
 
 Browser bioelectric tissue simulator. SvelteKit (Svelte 5 runes) + Tailwind v4 +
-shadcn-svelte, bun, vitest. Pure-TS physics core validated numerically against
+shadcn-svelte, bun, vitest. Charts and the cluster view are hand-drawn Canvas2D. Pure-TS physics core validated numerically against
 BETSE (see PLAN.md, docs/adr/0001).
 
 ## Layout
@@ -84,9 +84,10 @@ BETSE (see PLAN.md, docs/adr/0001).
   (run/step/reset, field, colormap, tools, speed, theme), `ClusterView`
   (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout; for
   ion fields the background is tinted with the bath concentration),
-  `TracePanel` (toggleable quantities, one stacked `TraceChart` uPlot per
-  quantity, series per probe, dashed bath series on a right axis when the bath
-  is probed by clicking outside the cluster), `Playback` (frame slider),
+  `TracePanel` (toggleable quantities, one stacked `TraceChart` per quantity:
+  a small Canvas2D line chart with nice ticks, null gaps, pixel decimation,
+  hover readout, click-to-seek, dashed bath series on a right axis when the
+  bath is probed by clicking outside the cluster), `Playback` (frame slider),
   `Colorbar`. ConfigPanel is summary cards; each
   physics category opens a `SettingsDialog` (large shadcn Dialog: `BigField`
   form left, model explanation right). Regions/Events stay inline (painting
