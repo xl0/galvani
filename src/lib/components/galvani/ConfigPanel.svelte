@@ -7,6 +7,7 @@
 	import { basicCaIons, basicIons } from '$lib/core/defaults';
 	import { builtinShapes, maskFromFile, maskFromPath } from '$lib/mask';
 	import { loadLibrary, removeFromLibrary, saveToLibrary } from '$lib/library';
+	import { NetworkSchema } from '$lib/core/experiment';
 	import Save from '@lucide/svelte/icons/save';
 	import type { Mask } from '$lib/core/generator';
 	import { channelModels, channelTypes } from '$lib/core/channels';
@@ -103,8 +104,24 @@
 	}
 	function addChannel() {
 		const id = `ch${Date.now().toString(36)}`;
-		set((e) => e.channels.push({ id, type: 'Kv1p5', maxDm: 1e-15, profile: '', enabled: true }));
+		set((e) => e.channels.push({ id, type: 'Kv1p5', maxDm: 1e-15, profile: '', enabled: true, activators: [], inhibitors: [] }));
 	}
+	// network edited as JSON (validated with the schema)
+	let netText = $state('');
+	let netError = $state('');
+	$effect(() => { netText = JSON.stringify(ex.network ?? { substances: [], reactions: [], modulators: [], affectCharge: true }, null, 2); });
+	function applyNetwork() {
+		try {
+			const parsed = NetworkSchema.parse(JSON.parse(netText));
+			netError = '';
+			set((e) => (e.network = parsed.substances.length ? parsed : null));
+		} catch (err) { netError = err instanceof Error ? err.message.split('\n').slice(0, 6).join(' ') : String(err); }
+	}
+	const netSummary = $derived.by(() => {
+		const n = ex.network;
+		if (!n || n.substances.length === 0) return 'none';
+		return `${n.substances.map((s) => s.name).join(', ')}${n.reactions.length ? ` · ${n.reactions.length} reaction${n.reactions.length > 1 ? 's' : ''}` : ''}${n.modulators.length ? ` · ${n.modulators.length} modulator${n.modulators.length > 1 ? 's' : ''}` : ''}`;
+	});
 	const eventLabel: Record<SimEvent['kind'], string> = { perm: 'permeability ×', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells' };
 	const inputCls = 'h-7 w-full min-w-0 rounded-md border border-input bg-background px-1.5 font-mono text-sm tabular-nums';
 </script>
@@ -343,6 +360,38 @@
 			</ul>
 			<h4>Regions</h4>
 			<p>A channel assigned to a region is expressed only on that region's membranes; elsewhere its open fraction is forced to zero. Gates keep evolving everywhere so switching regions is seamless.</p>
+		{/snippet}
+	</SettingsDialog>
+
+	<SettingsDialog title="Substances & reactions" blurb="A small chemical / gene network living in every cell: substances that are produced, decay, react, diffuse through gap junctions, gate ion channels or modulate the pump. Edited as JSON for now.">
+		{#snippet summary()}{netSummary}{/snippet}
+		{#snippet form()}
+			<textarea class="h-[52vh] w-full rounded-md border border-input bg-background p-2 font-mono text-xs leading-snug" spellcheck="false" bind:value={netText}></textarea>
+			<div class="mt-2 flex items-center gap-2">
+				<Button size="sm" onclick={applyNetwork}>Apply</Button>
+				<Button size="sm" variant="ghost" onclick={() => { netText = JSON.stringify(ex.network ?? { substances: [], reactions: [], modulators: [], affectCharge: true }, null, 2); netError = ''; }}>Revert</Button>
+				{#if netError}<span class="text-xs text-destructive">{netError}</span>{/if}
+			</div>
+			<p class="mt-2 text-sm text-muted-foreground">Adding or removing a substance, or changing its initial concentration or charge, restarts the run; rate constants and regulators apply live.</p>
+		{/snippet}
+		{#snippet explain()}
+			<h4>Substances</h4>
+			<p>Each substance has a concentration in every cell and in the bath. <code>Dm</code> is its membrane permeability (0 = trapped inside), <code>Dgj</code> how fast it moves to neighbouring cells through gap junctions, <code>z</code> its charge (charged substances shift V<sub>m</sub> like ions when <code>affectCharge</code> is on). <code>updateIntra</code> tracks a separate membrane-side concentration with diffusion inside the cell; <code>gjImpermeable</code> confines it to its cell.</p>
+			<h4>Growth and decay</h4>
+			<p><code>growth</code> makes the substance in the cells of <code>profile</code> ('' = all): rate = <code>rProd · α − rDecay · c</code>, where α is a product of Hill terms, one per regulator: activators contribute <code>(c/Km)ⁿ / (1 + (c/Km)ⁿ)</code>, inhibitors <code>1 / (1 + (c/Km)ⁿ)</code>. Regulators can be other substances or ions; <code>zone: "env"</code> reads the bath instead of the cell. That is enough to write gene regulatory networks (repressors, feed-forward loops, oscillators).</p>
+			<h4>Reactions</h4>
+			<p>Cell-zone reactions with reactants, products, stoichiometry and Km per species. With <code>deltaG: null</code> the rate is <code>vmax · α · Π (c/Km)ⁿ/(1+(c/Km)ⁿ)</code> over reactants (irreversible Michaelis-Menten). With a standard free energy it becomes thermodynamic: <code>vmax · α · (1 − Q/K<sub>eq</sub>)</code>, running backward if products pile up.</p>
+			<h4>Coupling to bioelectricity</h4>
+			<ul>
+				<li><code>gating</code>: the substance opens a permeability for listed ions, <code>peak · hill(c, HillK, HillN)</code>. A K⁺ opener hyperpolarizes; a Na⁺ or Ca²⁺ opener depolarizes.</li>
+				<li><code>modulators</code>: scale the Na/K pump (<code>NaK</code>) or gap junctions (<code>GJ</code>) by <code>max · α</code>.</li>
+				<li>Channels (Ion channels dialog) accept <code>activators</code> / <code>inhibitors</code> of the same form, so a substance can silence a voltage-gated channel.</li>
+				<li>Ions can be regulators too: a gene activated by intracellular Ca²⁺ closes the loop from voltage back to genes.</li>
+			</ul>
+			<h4>Same maths as BETSE</h4>
+			<p>This is a port of BETSE's "general network" (MasterOfNetworks) for the no-extracellular-grid case, validated against it to round-off. Not ported: transporters, active pumping of substances, mitochondria, environment-zone reactions, voltage-sensitive regulators.</p>
+			<h4>Example</h4>
+			<p>Load the "Morphogen gradient" preset: one substance made in a painted source, diffusing through junctions and opening K⁺ channels, so the tissue's voltage map follows the chemical gradient. "Gene network" is BETSE's three-gene example.</p>
 		{/snippet}
 	</SettingsDialog>
 

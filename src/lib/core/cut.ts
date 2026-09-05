@@ -89,7 +89,10 @@ export function cutCells(mesh: Mesh, s: SimState, removed: Set<number>): { mesh:
 		fluxesGj: s.fluxesGj.map(pickMem),
 		rateNaK: pickMem(s.rateNaK),
 		rhoCells: pickCell(s.rhoCells),
-		vgj: pickMem(s.vgj)
+		vgj: pickMem(s.vgj),
+		nakMod: pickMem(s.nakMod),
+		gjMod: pickMem(s.gjMod),
+		extraRho: pickCell(s.extraRho)
 	};
 	return { mesh: newMesh, state, cellMap, memMap };
 }

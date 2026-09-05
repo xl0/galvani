@@ -60,12 +60,60 @@ export const presets: Preset[] = [
 			e.params = { ...e.params, dt: 1e-4 };
 			e.endTime = 0.5;
 			e.channels = [
-				{ id: 'kleak', type: 'KLeak', maxDm: 1e-17, profile: '', enabled: true },
-				{ id: 'nav', type: 'Nav1p3', maxDm: 2e-14, profile: '', enabled: true },
-				{ id: 'kv', type: 'Kv1p5', maxDm: 1e-15, profile: '', enabled: true }
+				{ id: 'kleak', type: 'KLeak', maxDm: 1e-17, profile: '', enabled: true, activators: [], inhibitors: [] },
+				{ id: 'nav', type: 'Nav1p3', maxDm: 2e-14, profile: '', enabled: true, activators: [], inhibitors: [] },
+				{ id: 'kv', type: 'Kv1p5', maxDm: 1e-15, profile: '', enabled: true, activators: [], inhibitors: [] }
 			];
 			e.profiles = [{ id: 'trigger', name: 'Trigger', color: '#d62728', cells: cellsNear(e, W - 55e-6, W, 16e-6), Dm: {}, pumpScale: 1, gjScale: 1 }];
 			e.events = [{ kind: 'perm', t: 0.1, tEnd: 0.11, ion: 'Na', profile: 'trigger', factor: 200 }];
+			return e;
+		}
+	},
+	{
+		id: 'morphogen',
+		name: 'Morphogen gradient',
+		blurb: 'A painted source region produces a diffusible substance that opens K⁺ channels. It spreads through gap junctions and prints a hyperpolarized voltage gradient onto the tissue.',
+		make: () => {
+			const e = structuredClone(baseExperiment);
+			const W = e.generator.worldSize / 2;
+			e.name = 'Morphogen gradient';
+			e.endTime = 120;
+			e.profiles = [{ id: 'source', name: 'Source', color: '#9467bd', cells: cellsNear(e, W - 45e-6, W, 16e-6), Dm: {}, pumpScale: 1, gjScale: 1 }];
+			e.network = {
+				substances: [{
+					name: 'M', z: 0, Dm: 0, Do: 1e-10, Dgj: 1e-14, cCell: 0, cEnv: 0, updateIntra: false,
+					growth: { rProd: 0.2, rDecay: 0.02, profile: 'source', activators: [], inhibitors: [] },
+					gating: { ions: ['K'], HillK: 0.5, HillN: 2, peak: 2e-17, extracellular: false, activators: [], inhibitors: [] }
+				}],
+				reactions: [],
+				modulators: [],
+				affectCharge: true
+			};
+			return e;
+		}
+	},
+	{
+		id: 'genes',
+		name: 'Gene network (BETSE grn_basic)',
+		blurb: 'Three genes regulating each other: 1 represses itself via 3, 2 is activated by 1, 3 by 1 and 2. Genes are cell-local and do not touch the ions.',
+		make: () => {
+			const e = structuredClone(baseExperiment);
+			e.name = 'Gene network';
+			e.endTime = 60;
+			const gene = (name: string, rProd: number, activators: { name: string; Km: number; n: number; zone: 'cell' }[], inhibitors: { name: string; Km: number; n: number; zone: 'cell' }[]) => ({
+				name, z: 0, Dm: 0, Do: 1e-12, Dgj: 1e-16, cCell: 0, cEnv: 0, updateIntra: true, gjImpermeable: true,
+				growth: { rProd, rDecay: 1, profile: '', activators, inhibitors }
+			});
+			e.network = {
+				substances: [
+					gene('Gene 1', 2, [], [{ name: 'Gene 3', Km: 0.01, n: 1, zone: 'cell' }]),
+					gene('Gene 2', 2, [{ name: 'Gene 1', Km: 1, n: 1, zone: 'cell' }], []),
+					gene('Gene 3', 15, [{ name: 'Gene 1', Km: 1, n: 1, zone: 'cell' }, { name: 'Gene 2', Km: 1, n: 1, zone: 'cell' }], [])
+				],
+				reactions: [],
+				modulators: [],
+				affectCharge: true
+			};
 			return e;
 		}
 	},

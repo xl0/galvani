@@ -1,10 +1,12 @@
 /** Loader for parity fixtures exported by tools/betse/dump_parity.py. */
 import { finishMesh, type Mesh } from './mesh';
 import type { Ion, Params } from './params';
+import type { NetworkConfig } from './network';
 import { createState, type SimState } from './state';
 
 export interface BetseFixture {
-	channels?: { type: string; ion: string; maxDm: number }[];
+	channels?: { type: string; ion: string; maxDm: number; inhibitors?: { name: string; Km: number; n: number; zone: 'cell' | 'env' }[] }[];
+	network?: NetworkConfig | null;
 	params: Record<string, number | boolean>;
 	ions: { name: string; z: number; D_free: number; Dm: number; c_cell: number; c_env: number }[];
 	mesh: {
@@ -27,6 +29,8 @@ export interface BetseFixture {
 	t0: {
 		vm: number[];
 		cc_cells: number[][];
+		/** BETSE's membrane copy of the concentrations; can differ from cc_cells after its charge balancing */
+		cc_at_mem?: number[][];
 		cc_env: number[];
 		gjopen: number[];
 		Dm_cells: number[][];
@@ -34,8 +38,9 @@ export interface BetseFixture {
 		gj_block: number[];
 		NaKATP_block: number[];
 		n_steps: number;
+		subs?: Record<string, { cells: number[]; mem: number[]; env: number }>;
 	};
-	snaps: { step: number; vm: number[]; cc_cells: number[][]; cc_env: number[]; gjopen: number[] }[];
+	snaps: { step: number; vm: number[]; cc_cells: number[][]; cc_env: number[]; gjopen: number[]; subs?: Record<string, { cells: number[]; mem: number[]; env: number }>; nak_block?: number[] }[];
 }
 
 export function paramsFromBetse(fx: BetseFixture): Params {
@@ -102,7 +107,8 @@ export function stateFromBetse(fx: BetseFixture, mesh: Mesh, ions: Ion[]): SimSt
 	s.vm.set(t.vm);
 	for (let i = 0; i < ions.length; i++) {
 		s.ccCells[i].set(t.cc_cells[i]);
-		for (let m = 0; m < mesh.nMems; m++) s.ccAtMem[i][m] = s.ccCells[i][mesh.memToCell[m]];
+		if (t.cc_at_mem) s.ccAtMem[i].set(t.cc_at_mem[i]);
+		else for (let m = 0; m < mesh.nMems; m++) s.ccAtMem[i][m] = s.ccCells[i][mesh.memToCell[m]];
 		s.ccEnv[i] = t.cc_env[i];
 		s.Dm[i].set(t.Dm_cells[i]);
 		s.Dgj[i].set(t.D_gj[i]);

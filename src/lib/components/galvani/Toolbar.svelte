@@ -25,7 +25,8 @@
 	const fields = $derived([
 		{ value: 'vm', label: 'Vm' },
 		...session.experiment.ions.map((i) => ({ value: i.name, label: `[${i.name}]` })),
-		...(session.view?.channels ?? []).map((ch) => ({ value: `P:${ch.id}`, label: `open ${channelModels[ch.type]?.label ?? ch.type}` }))
+		...(session.view?.channels ?? []).map((ch) => ({ value: `P:${ch.id}`, label: `open ${channelModels[ch.type]?.label ?? ch.type}` })),
+		...(session.view?.subs ?? []).map((x) => ({ value: `S:${x.name}`, label: `[${x.name}]` }))
 	]);
 	const tools: { id: Tool; icon: typeof Crosshair; title: string }[] = [
 		{ id: 'probe', icon: Crosshair, title: 'Probe: click a cell to trace it' },

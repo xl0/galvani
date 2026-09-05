@@ -3,6 +3,7 @@ import { defaultGenerator } from './generator';
 import type { Mesh } from './mesh';
 import type { SimState } from './state';
 import { basicIons, basicParams } from './defaults';
+import type { NetworkConfig } from './network';
 
 /** Named cell region with membrane-parameter overrides. */
 export const ProfileSchema = z.object({
@@ -27,6 +28,9 @@ export const EventSchema = z.discriminatedUnion('kind', [
 ]);
 export type SimEvent = z.infer<typeof EventSchema>;
 
+/** Hill-type regulator of a rate: a substance or ion name (suffix '!' = independent activator), Km [mM], exponent, pool. */
+export const InfluencerSchema = z.object({ name: z.string(), Km: z.number().positive(), n: z.number(), zone: z.enum(['cell', 'env']).default('cell') });
+
 /** A voltage-gated channel population. `profile` = '' means every membrane. */
 export const ChannelSchema = z.object({
 	id: z.string(),
@@ -34,8 +38,43 @@ export const ChannelSchema = z.object({
 	/** permeability when fully open [m2/s] */
 	maxDm: z.number().nonnegative(),
 	profile: z.string(),
-	enabled: z.boolean().default(true)
+	enabled: z.boolean().default(true),
+	/** network substances that scale this channel's permeability */
+	activators: z.array(InfluencerSchema).default([]),
+	inhibitors: z.array(InfluencerSchema).default([])
 });
+
+const GrowthSchema = z.object({
+	rProd: z.number().nonnegative(), rDecay: z.number().nonnegative(), profile: z.string().default(''),
+	activators: z.array(InfluencerSchema).default([]), inhibitors: z.array(InfluencerSchema).default([]),
+	decayMax: z.number().nonnegative().optional(), decayActivators: z.array(InfluencerSchema).optional(), decayInhibitors: z.array(InfluencerSchema).optional()
+});
+const GatingSchema = z.object({
+	ions: z.array(z.string()), HillK: z.number().positive(), HillN: z.number(), peak: z.number().nonnegative(), extracellular: z.boolean().default(false),
+	activators: z.array(InfluencerSchema).default([]), inhibitors: z.array(InfluencerSchema).default([])
+});
+export const SubstanceSchema = z.object({
+	name: z.string().min(1), z: z.number(), Dm: z.number().nonnegative(), Do: z.number().nonnegative(), Dgj: z.number().nonnegative(),
+	cCell: z.number().nonnegative(), cEnv: z.number().nonnegative(), scale: z.number().optional(), updateIntra: z.boolean().optional(),
+	gjImpermeable: z.boolean().optional(), growth: GrowthSchema.optional(), gating: GatingSchema.optional()
+});
+const ReactionSchema = z.object({
+	name: z.string(), reactants: z.array(z.object({ name: z.string(), coeff: z.number(), Km: z.number().positive() })),
+	products: z.array(z.object({ name: z.string(), coeff: z.number(), Km: z.number().positive() })),
+	vmax: z.number().nonnegative(), deltaG: z.number().nullable().default(null),
+	activators: z.array(InfluencerSchema).default([]), inhibitors: z.array(InfluencerSchema).default([])
+});
+const ModulatorSchema = z.object({
+	name: z.string(), target: z.enum(['GJ', 'NaK']), max: z.number().nonnegative(),
+	activators: z.array(InfluencerSchema).default([]), inhibitors: z.array(InfluencerSchema).default([])
+});
+/** Substance / reaction / modulator network (see core/network.ts). */
+export const NetworkSchema: z.ZodType<NetworkConfig> = z.object({
+	substances: z.array(SubstanceSchema).default([]),
+	reactions: z.array(ReactionSchema).default([]),
+	modulators: z.array(ModulatorSchema).default([]),
+	affectCharge: z.boolean().default(true)
+}) as unknown as z.ZodType<NetworkConfig>;
 export type ChannelConfig = z.infer<typeof ChannelSchema>;
 
 const IonSchema = z.object({
@@ -72,7 +111,8 @@ export const ExperimentSchema = z.object({
 	events: z.array(EventSchema),
 	channels: z.array(ChannelSchema).default([]),
 	/** starting membrane voltage [V]; realized by offsetting the balancing anion per cell */
-	initialVm: z.number().default(0)
+	initialVm: z.number().default(0),
+	network: NetworkSchema.nullable().default(null)
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
 
@@ -87,7 +127,8 @@ export const baseExperiment: Experiment = {
 	profiles: [],
 	events: [],
 	channels: [],
-	initialVm: 0
+	initialVm: 0,
+	network: null
 };
 
 /** Changes to these require rebuilding mesh and state rather than a live update. */
@@ -95,6 +136,7 @@ export function needsReload(a: Experiment, b: Experiment): boolean {
 	return (
 		JSON.stringify(a.generator) !== JSON.stringify(b.generator) ||
 		a.initialVm !== b.initialVm ||
+		JSON.stringify(a.network?.substances.map((s) => [s.name, s.cCell, s.cEnv, s.z])) !== JSON.stringify(b.network?.substances.map((s) => [s.name, s.cCell, s.cEnv, s.z])) ||
 		a.ions.length !== b.ions.length ||
 		a.ions.some((x, i) => x.name !== b.ions[i].name || x.z !== b.ions[i].z || x.cCell !== b.ions[i].cCell || x.cEnv !== b.ions[i].cEnv || x.Dfree !== b.ions[i].Dfree)
 	);

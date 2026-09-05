@@ -17,10 +17,13 @@
 	const withBath = $derived(session.bathProbe && ionIdx >= 0);
 	const css = (name: string) => getComputedStyle(wrap).getPropertyValue(name).trim();
 
+	const subIdx = $derived(quantity.startsWith('S:') ? session.subNames.indexOf(quantity.slice(2)) : -1);
 	function seriesData(c: number): (number | null)[] {
 		const tr = session.traces.get(c);
 		if (!tr) return [];
-		return quantity === 'vm' ? tr.vm.map((v) => (v === null ? null : v * 1e3)) : tr.cc[ionIdx];
+		if (quantity === 'vm') return tr.vm.map((v) => (v === null ? null : v * 1e3));
+		if (subIdx >= 0) return tr.sub[subIdx] ?? [];
+		return tr.cc[ionIdx];
 	}
 
 	/** "nice" tick step for a range spanning `span` over ~n ticks */

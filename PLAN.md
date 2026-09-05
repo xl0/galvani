@@ -66,4 +66,6 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] HH channels (BETSE Na/K families) with parity fixture; initial Vm; excitable preset
 - [x] Ca2+ + Ca-ATPase (basic_Ca profile) with parity fixture; ion-set switch in the Ions dialog
 - [x] Per-membrane rendering (membranes checkbox) + channel open-fraction field
+- [x] Substance/GRN network engine with parity fixture; JSON network dialog; morphogen + gene-network presets
+- [ ] Network UI beyond JSON (forms per substance); transporters / substance pumps if needed
 - [ ] Later: fast equivalent-circuit solver; env grid; Cl/HCN channel families; ER Ca dynamics; calcium-wave preset

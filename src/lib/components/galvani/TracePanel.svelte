@@ -5,7 +5,7 @@
 
 	const session = getSession();
 	const view = getView();
-	const quantities = $derived([{ id: 'vm', label: 'Vm', unit: 'mV' }, ...session.experiment.ions.map((i) => ({ id: i.name, label: `[${i.name}]`, unit: 'mM' }))]);
+	const quantities = $derived([{ id: 'vm', label: 'Vm', unit: 'mV' }, ...session.experiment.ions.map((i) => ({ id: i.name, label: `[${i.name}]`, unit: 'mM' })), ...session.subNames.map((n) => ({ id: `S:${n}`, label: n, unit: 'mM' }))]);
 	const shown = $derived(quantities.filter((q) => view.traceQuantities.includes(q.id)));
 
 	function toggle(id: string) {

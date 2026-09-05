@@ -26,6 +26,10 @@
 			const n = new Int32Array(g.nCells);
 			for (let m = 0; m < g.nMems; m++) { out[g.memToCell[m]] += mv[m]; n[g.memToCell[m]]++; }
 			for (let c = 0; c < g.nCells; c++) out[c] /= Math.max(1, n[c]);
+		} else if (view.field.startsWith('S:')) {
+			const sub = s.subs.find((x) => x.name === view.field.slice(2));
+			if (!sub) return null;
+			out.set(sub.cells);
 		} else {
 			const i = session.experiment.ions.findIndex((x) => x.name === view.field);
 			if (i < 0) return null;
@@ -118,8 +122,10 @@
 		const border = css('--border');
 		// the bath: everything outside the cluster, tinted by the ion's bath concentration
 		const bi = session.experiment.ions.findIndex((x) => x.name === view.field);
-		if (bi >= 0 && session.view) {
-			const t = Math.min(1, Math.max(0, (session.view.ccEnv[bi] - lo) / (hi - lo)));
+		const bsub = view.field.startsWith('S:') ? session.view?.subs.find((x) => x.name === view.field.slice(2)) : undefined;
+		const bathVal = bi >= 0 && session.view ? session.view.ccEnv[bi] : bsub ? bsub.env : null;
+		if (bathVal !== null) {
+			const t = Math.min(1, Math.max(0, (bathVal - lo) / (hi - lo)));
 			ctx.globalAlpha = 0.35;
 			ctx.fillStyle = lut[Math.round(t * 255)];
 			ctx.fillRect(0, 0, width, height);
@@ -294,7 +300,8 @@
 		const c = view.hover, s = session.view, g = session.geom;
 		if (c === null || !s || !g || c >= g.nCells) return null;
 		const ions = session.experiment.ions.map((ion, i) => `${ion.name} ${(s.cc[i * g.nCells + c]).toFixed(2)}`).join('  ');
-		return `cell ${c}  Vm ${(s.vmAve[c] * 1e3).toFixed(2)} mV  ${ions}`;
+		const subs = s.subs.map((x) => `${x.name} ${x.cells[c].toPrecision(3)}`).join('  ');
+		return `cell ${c}  Vm ${(s.vmAve[c] * 1e3).toFixed(2)} mV  ${ions}${subs ? '  ' + subs : ''}`;
 	});
 	const bathInfo = $derived.by(() => {
 		const s = session.view;

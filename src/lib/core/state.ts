@@ -33,6 +33,11 @@ export interface SimState {
 	rhoCells: Float64Array;
 	/** transjunctional voltage per membrane */
 	vgj: Float64Array;
+	/** per-membrane multipliers written by network modulators (BETSE NaKATP_block / gj_block) */
+	nakMod: Float64Array;
+	gjMod: Float64Array;
+	/** extra charge density per cell from network substances [C/m3] */
+	extraRho: Float64Array;
 }
 
 /**
@@ -60,7 +65,10 @@ export function createState(mesh: Mesh, ions: Ion[], initialVm = 0, cm = 0.05): 
 		fluxesGj: per(nMems),
 		rateNaK: new Float64Array(nMems),
 		rhoCells: new Float64Array(nCells),
-		vgj: new Float64Array(nMems)
+		vgj: new Float64Array(nMems),
+		nakMod: new Float64Array(nMems).fill(1),
+		gjMod: new Float64Array(nMems).fill(1),
+		extraRho: new Float64Array(nCells)
 	};
 	if (initialVm !== 0) {
 		let ia = ions.findIndex((i) => i.name === 'M');
@@ -80,7 +88,7 @@ export function createState(mesh: Mesh, ions: Ion[], initialVm = 0, cm = 0.05): 
 /** Vm from net cell charge: surface charge / capacitance (BETSE update_V, polarizability 0). */
 export function updateV(mesh: Mesh, ions: Ion[], p: Params, s: SimState): void {
 	const { nCells, nMems } = mesh;
-	s.rhoCells.fill(0);
+	s.rhoCells.set(s.extraRho);
 	for (let i = 0; i < ions.length; i++) {
 		const zF = ions[i].z * F;
 		const cc = s.ccCells[i];

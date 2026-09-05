@@ -14,13 +14,15 @@ export interface MeshGeom {
 	bounds: [number, number, number, number];
 }
 
-/** Trace samples accumulated since the previous snapshot: per sample, per probe, (vmAve, cc[0..nIons)). */
+/** Trace samples accumulated since the previous snapshot: per sample, per probe, (vmAve, cc[0..nIons), subs[0..nSubs)). */
 export interface TraceChunk {
 	probes: number[];
 	t: Float64Array;
 	values: Float32Array;
 	/** bath concentration per sample per ion (nSamples x nIons) */
 	bath: Float32Array;
+	/** substance names in the order they appear in values */
+	subNames: string[];
 }
 
 export interface Snapshot {
@@ -36,6 +38,8 @@ export interface Snapshot {
 	gjOpen: Float32Array;
 	/** open fraction per membrane for each active channel */
 	channels: { id: string; type: string; P: Float32Array }[];
+	/** network substances: per-cell concentration [mM] and bath value */
+	subs: { name: string; cells: Float32Array; env: number }[];
 	trace: TraceChunk;
 }
 

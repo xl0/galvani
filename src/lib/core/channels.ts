@@ -159,6 +159,8 @@ export interface ChannelInstance {
 	mask: Float64Array;
 	m: Float64Array;
 	h: Float64Array;
+	/** per-membrane multiplier from network regulators (BETSE channel 'modulator'), default 1 */
+	modulator: Float64Array;
 	/** last computed open fraction (for display) */
 	P: Float64Array;
 	/** scratch: flux into cells [mol/m2 s] */
@@ -173,7 +175,7 @@ export function createChannel(id: string, type: string, maxDm: number, ions: Ion
 	const n = vm.length;
 	const ch: ChannelInstance = {
 		id, type, model, ionIndex, maxDm,
-		mask: new Float64Array(n).fill(1), m: new Float64Array(n), h: new Float64Array(n), P: new Float64Array(n), flux: new Float64Array(n)
+		mask: new Float64Array(n).fill(1), modulator: new Float64Array(n).fill(1), m: new Float64Array(n), h: new Float64Array(n), P: new Float64Array(n), flux: new Float64Array(n)
 	};
 	for (let k = 0; k < n; k++) {
 		const V = vm[k] * 1e3;
@@ -211,7 +213,7 @@ export function runChannel(ch: ChannelInstance, mesh: Mesh, ions: Ion[], p: Para
 		const P = ch.m[k] ** model.mPower * ch.h[k] ** model.hPower * ch.mask[k];
 		ch.P[k] = P;
 		s.vm[k] += NONCE;
-		flux[k] = ghkFlux(cA, cc[mesh.memToCell[k]], P * ch.maxDm, p.tm, z, s.vm[k], RT);
+		flux[k] = ghkFlux(cA, cc[mesh.memToCell[k]], P * ch.maxDm * ch.modulator[k], p.tm, z, s.vm[k], RT);
 	}
 	let envSum = 0;
 	for (let k = 0; k < nMems; k++) {

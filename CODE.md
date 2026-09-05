@@ -33,6 +33,15 @@ BETSE (see PLAN.md, docs/adr/0001).
     per membrane; `runChannel()` = implicit gate update, GHK flux with
     P·maxDm, applied to concentrations immediately (BETSE run_loop_channels
     order: after the ion loop, before update_all_concs).
+  - `network.ts` — port of BETSE's MasterOfNetworks (ECM-off): substances with
+    growth/decay (Hill regulators, region targets), cell-zone reactions
+    (MM or thermodynamic form), modulators of the pump / gap junctions,
+    substance-gated ion permeabilities, channel regulators; substances
+    diffuse across membranes (GHK) and through gap junctions, and their charge
+    enters Vm (`state.extraRho`). Regulators are compiled to closures instead
+    of BETSE's eval strings. Runs after channels each step (`runModulators`,
+    `run`). Not ported: transporters, substance pumping, mitochondria,
+    env-zone reactions, voltage-sensitive ('*') regulators.
   - `betse.ts` — loads parity fixtures into Mesh / Params / Ion / SimState.
   - `*.test.ts` — parity tests (basic, and Nav1p3+Kv1p5 channels; tolerances
     ~1e-10, measured ~1e-12, with a negative control) and generator/cut invariants.
@@ -42,7 +51,10 @@ BETSE (see PLAN.md, docs/adr/0001).
   + Kv1p5 (1e-15) active during init (`dump.sh <out> --channels`).
   `betse-ca.json` — `basic_Ca` ion profile with the Ca-ATPase (`--ions basic_Ca`).
   `betse-ca-channels.json` — basic_Ca + Nav/Kv/Cav3p3 (`--ions basic_Ca --channels --cav`).
-  `parity.test.ts` runs the same checks over all four.
+  `betse-network.json` — three substances (growth, charged + membrane-permeable
+  + K gating, reaction product with intracellular diffusion), a reaction, a
+  pump modulator and a substance-inhibited K leak (`--network`).
+  `parity.test.ts` runs the same checks over all five.
 - `tools/betse/` — `setup.sh` builds `.venv` (uv) from the cached BETSE
   checkout; `dump.sh` regenerates the fixture via `dump_parity.py`, which hooks
   BETSE's `check_v` (called once per step) to snapshot state. BETSE needs a
@@ -92,6 +104,7 @@ BETSE (see PLAN.md, docs/adr/0001).
   physics category opens a `SettingsDialog` (large shadcn Dialog: `BigField`
   form left, model explanation right). Regions/Events stay inline (painting
   needs the canvas) using compact `NumField`s with tooltips.
+  The network is edited as JSON in its dialog (validated by `NetworkSchema`).
   In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
 - `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": seven
@@ -106,6 +119,14 @@ BETSE (see PLAN.md, docs/adr/0001).
   Add components with `bunx shadcn-svelte@latest add <name> -y`.
 
 ## Non-obvious
+
+- BETSE's initial charge balancing (bal_charge) edits cell concentrations but
+  not its membrane copy, so the first step uses stale membrane values.
+  Fixtures therefore record `cc_at_mem`; Galvani's own `balanceCharge()`
+  keeps both in sync.
+- Network modulators write `state.nakMod` / `gjMod` (per membrane), which
+  multiply the region factors `nakBlock` / `gjBlock`; substance-gated fluxes
+  are applied immediately *and* queued into `fluxesMem` (BETSE does both).
 
 - `initialVm` in the experiment is realized in `createState()` by adding
   balancing anion (M) per cell so that rho·diviterm/cm equals it: an instant

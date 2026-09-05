@@ -3,6 +3,7 @@ import { createChannel, type ChannelInstance } from '$lib/core/channels';
 import { cutCells } from '$lib/core/cut';
 import { applyModulation, type Experiment } from '$lib/core/experiment';
 import { generateMesh } from '$lib/core/generator';
+import { Network } from '$lib/core/network';
 import type { Mesh } from '$lib/core/mesh';
 import { createState, updateV, type SimState } from '$lib/core/state';
 import { step, UnstableError } from '$lib/core/step';
@@ -19,6 +20,7 @@ let probes: number[] = [];
 const firedCuts = new Set<number>();
 let hasTimedEvents = false;
 let channels: ChannelInstance[] = [];
+let network: Network | null = null;
 
 // trace accumulation between snapshots
 let traceT: number[] = [];
@@ -51,13 +53,14 @@ function snapshot(): void {
 	const nIons = exp.ions.length;
 	const cc = new Float32Array(nIons * mesh.nCells);
 	for (let i = 0; i < nIons; i++) cc.set(state.ccCells[i], i * mesh.nCells);
-	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB) };
+	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB), subNames: network ? network.subs.map((x) => x.cfg.name) : [] };
 	traceT = []; traceV = []; traceB = [];
 	const snap = {
 		t: state.t, step: state.step, running, stepsPerSec,
 		vmAve: Float32Array.from(state.vmAve), vm: Float32Array.from(state.vm), cc,
 		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen),
-		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })), trace
+		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })),
+		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnv })) : [], trace
 	};
 	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
@@ -71,6 +74,7 @@ function load(e: Experiment): void {
 	firedCuts.clear();
 	hasTimedEvents = e.events.some((ev) => ev.kind !== 'cut');
 	applyModulation(mesh, exp, state, 0);
+	buildNetwork(null);
 	updateV(mesh, e.ions, e.params, state);
 	channels = [];
 	syncChannels();
@@ -94,6 +98,7 @@ function syncChannels(): void {
 			catch (err) { post({ type: 'error', message: String(err) }); continue; }
 		}
 		ch.maxDm = cfg.maxDm;
+		network?.setChannelRegulators(ch.id, cfg.activators, cfg.inhibitors);
 		const prof = cfg.profile === '' ? null : exp.profiles.findIndex((p) => p.id === cfg.profile);
 		for (let m = 0; m < mesh.nMems; m++) ch.mask[m] = prof === null || cellProfile[mesh.memToCell[m]] === prof ? 1 : 0;
 		next.push(ch);
@@ -101,10 +106,36 @@ function syncChannels(): void {
 	channels = next;
 }
 
+/** (Re)build the network. Substance pools are kept by name when `keep` is given (live edits, cuts). */
+function buildNetwork(keep: Network | null, cellMap?: Int32Array): void {
+	if (!exp.network || exp.network.substances.length === 0) { network = null; state.nakMod.fill(1); state.gjMod.fill(1); state.extraRho.fill(0); return; }
+	const profileCells = (id: string) => exp.profiles.find((p) => p.id === id)?.cells ?? null;
+	try {
+		const net = new Network(exp.network, mesh, exp.ions, exp.params, state, profileCells);
+		if (keep) {
+			for (const sub of net.subs) {
+				const old = keep.subs.find((x) => x.cfg.name === sub.cfg.name);
+				if (!old) continue;
+				const cells = new Float64Array(mesh.nCells).fill(sub.cfg.cCell);
+				if (cellMap) { for (let c = 0; c < cellMap.length; c++) if (cellMap[c] >= 0) cells[cellMap[c]] = old.cCells[c]; }
+				else cells.set(old.cCells);
+				const mem = new Float64Array(mesh.nMems);
+				for (let m = 0; m < mesh.nMems; m++) mem[m] = cells[mesh.memToCell[m]];
+				net.setConcentrations(sub.cfg.name, cells, mem, old.cEnv);
+			}
+		} else net.balanceCharge();
+		network = net;
+	} catch (err) {
+		network = null;
+		post({ type: 'error', message: `network: ${err instanceof Error ? err.message : err}` });
+	}
+}
+
 function update(e: Experiment): void {
 	exp = e;
 	hasTimedEvents = e.events.some((ev) => ev.kind !== 'cut');
 	applyModulation(mesh, exp, state, state.t);
+	buildNetwork(network);
 	syncChannels();
 	if (!running) snapshot();
 }
@@ -124,6 +155,7 @@ function doCut(cells: Iterable<number>): void {
 	const pick = (src: Float64Array) => { const out = new Float64Array(mesh.nMems); for (let m = 0; m < r.memMap.length; m++) if (r.memMap[m] >= 0) out[r.memMap[m]] = src[m]; return out; };
 	channels = channels.map((ch) => ({ ...ch, mask: pick(ch.mask), m: pick(ch.m), h: pick(ch.h), P: pick(ch.P), flux: new Float64Array(mesh.nMems) }));
 	applyModulation(mesh, exp, state, state.t);
+	buildNetwork(network, r.cellMap);
 	syncChannels();
 	geom('cut', r.cellMap);
 }
@@ -145,13 +177,14 @@ function sampleTrace(): void {
 	for (const c of probes) {
 		traceV.push(state.vmAve[c]);
 		for (let i = 0; i < exp.ions.length; i++) traceV.push(state.ccCells[i][c]);
+		if (network) for (const sub of network.subs) traceV.push(sub.cCells[c]);
 	}
 }
 
 function doStep(): boolean {
 	fireEvents();
 	try {
-		step(mesh, exp.ions, exp.params, state, channels);
+		step(mesh, exp.ions, exp.params, state, channels, network);
 	} catch (err) {
 		running = false;
 		post({ type: 'error', message: err instanceof UnstableError ? err.message : String(err) });

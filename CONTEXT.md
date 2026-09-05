@@ -24,6 +24,12 @@ details live in CODE.md.
 - **Channel** — a voltage-gated population on a set of membranes: Hodgkin-
   Huxley gates m, h per membrane give an open fraction P; the ion's
   permeability gets P × max permeability. Assigned to all cells or a region.
+- **Substance** — a network species with a concentration per cell (and in the
+  bath): produced/decayed under Hill regulation, reacting, diffusing through
+  gap junctions, optionally charged, gating ion permeabilities or modulating
+  the pump / junctions. A gene product is a substance with Dm = 0.
+- **Regulator** — a substance or ion that scales a rate through a Hill term
+  (activator or inhibitor) with Km and n.
 - **Initial Vm** — the membrane voltage the cluster starts at, produced by a
   small per-cell anion offset rather than by running the pump.
 - **Tissue profile** — a named set of cells with membrane parameter overrides

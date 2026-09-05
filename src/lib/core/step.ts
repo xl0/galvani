@@ -4,6 +4,7 @@ import { F, R } from './params';
 import type { SimState } from './state';
 import { updateV } from './state';
 import { runChannel, type ChannelInstance } from './channels';
+import type { Network } from './network';
 
 /**
  * BETSE parity notes: BETSE adds 1e-25 in place to the voltage array in
@@ -21,7 +22,7 @@ const GJ_A2 = 0.14;
 export class UnstableError extends Error {}
 
 /** Advance the state by one forward-Euler step of length p.dt. */
-export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: ChannelInstance[] = []): void {
+export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: ChannelInstance[] = [], network: Network | null = null): void {
 	const { nMems, nCells } = mesh;
 	const RT = R * p.T;
 	const dt = p.dt;
@@ -53,7 +54,7 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 			const Keq = Math.exp(-(p.deltaGATP / RT - (F * Vm) / RT));
 			const naKm3 = (cNai / p.KmNK_Na) ** 3;
 			const fwd = (naKm3 * cKoKm2 * atpKm) / ((1 + naKm3) * (1 + cKoKm2) * (1 + atpKm));
-			const fNa = -3 * s.nakBlock[m] * p.alphaNaK * fwd * (1 - Q / Keq);
+			const fNa = -3 * s.nakBlock[m] * s.nakMod[m] * p.alphaNaK * fwd * (1 - Q / Keq);
 			fNaArr[m] += fNa;
 			fKArr[m] += -(2 / 3) * fNa;
 			s.rateNaK[m] = -fNa;
@@ -84,10 +85,10 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 				let beta = GJ_LAMB * Math.exp(GJ_A2 * (V1 - p.gjVthresh));
 				beta = beta / (1 + 50 * beta);
 				s.gjOpen[m] = (s.gjOpen[m] + dtms * (alpha + beta * p.gjMin)) / (1 + alpha * dtms + beta * dtms);
-				s.gjOpen[m] *= s.gjBlock[m];
+				s.gjOpen[m] *= s.gjBlock[m] * s.gjMod[m];
 			}
 		} else {
-			for (let m = 0; m < nMems; m++) s.gjOpen[m] = s.gjBlock[m] * mesh.gjWeights[m];
+			for (let m = 0; m < nMems; m++) s.gjOpen[m] = s.gjBlock[m] * s.gjMod[m] * mesh.gjWeights[m];
 		}
 		const Dgj = s.Dgj[i];
 		const fgj = s.fluxesGj[i];
@@ -124,7 +125,13 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 	}
 
 	// ---- voltage-gated channels (BETSE network run_loop_channels) --------
+	network?.runChannelModulators(channels);
 	for (const ch of channels) runChannel(ch, mesh, ions, p, s);
+	// ---- substance network: modulators then growth/reactions/transport (BETSE run_loop) --
+	if (network) {
+		network.runModulators();
+		network.run(s.t);
+	}
 
 	// ---- apply fluxes to concentrations (BETSE update_all_concs) ---------
 	for (let i = 0; i < nIons; i++) {
