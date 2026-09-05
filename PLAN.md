@@ -1,0 +1,45 @@
+# Galvani — plan
+
+Browser-based interactive bioelectric tissue simulator. From-scratch reimplementation
+of BETSE's core model (Voronoi cell cluster, per-membrane Vm, GHK flux, HH channels,
+gated gap junctions, config-driven reaction/GRN networks). SvelteKit + shadcn-svelte,
+custom compact theme. Dimension-agnostic core, 2D first, 3D later.
+Validated against BETSE (venv at /home/xl0/pi-qa, source ~/.cache/checkouts/github.com/betsee/betse).
+
+## Design question tree (grill session)
+
+1. Purpose & scope
+   - [x] First win: reproduce BETSE default sim (init phase, resting Vm from uniform concs), numeric match
+   - [x] Fidelity: faithful membrane/GJ/pump/channel math; free to diverge on env, smoothing, flow, deform
+2. Physics core
+   - [x] v1 solver: full ion-concentration solver (needed to match BETSE init); fast equiv-circuit mode later
+   - [x] v1 physics: Na/K-ATPase + GHK membrane flux, ions Na/K/P/M ('basic'), GJ w/ Harris gating.
+         Phase 2: HH channels, Ca. Later: networks/GRN. Never (unless asked): flow, deformation
+   - [x] Forward Euler, same dt as BETSE (parity). Step designed so a split integrator can be swapped in later
+   - [x] v1 env: well-mixed bath, fixed concs (BETSE 'simulate extracellular spaces: false'). Grid = phase 2+
+3. Architecture
+   - [x] Core: TypeScript on typed arrays; WebGPU only on measured need
+   - [x] Sim in Web Worker; typed-array snapshots to UI at display rate
+   - [x] Mesh: cells, membranes (faces) with area/normal/midpoint, neighbor pairs; own generator for interactive,
+         imported BETSE mesh for validation. Dimension-agnostic
+   - [x] Svelte 5 runes, state classes (see svelte-state-classes skill). Theme: zinc, compact, light+dark
+4. Model definition & persistence
+   - [x] Typed JSON config = source of truth; shadcn forms edit it; BETSE YAML import script for validation cases
+   - [x] Config compressed into URL hash (native CompressionStream, base64url). Mesh not stored:
+         generator is seeded/deterministic. Later: server-side + login
+5. Validation
+   - [x] Harness: Python script (uses pi-qa venv) dumps BETSE mesh geometry + index maps + traces to JSON;
+         vitest loads mesh, runs Galvani step loop, compares Vm/concs within tolerance
+   - [x] Reference: BETSE default config with ECM off, init phase Vm + ion conc traces
+6. UI
+   - [x] Canvas2D behind small renderer interface; uPlot for traces
+   - [x] 3-pane workbench (config | canvas+toolbar | traces). Interactions: probe cells -> live traces,
+         live param edits while running, paint tissue profiles, cut cells mid-run
+7. Tooling
+   - [x] bun + SvelteKit + Tailwind v4 + shadcn-svelte + vitest + adapter-static
+8. 3D
+   - [ ] Only: keep mesh abstraction dimension-free; defer everything else
+
+## TODO
+
+(populated as decisions land)
