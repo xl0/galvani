@@ -2,14 +2,12 @@
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
 	import { getSession } from '$lib/sim/session.svelte';
-	import { getView } from '$lib/sim/view.svelte';
 
 	/** One stacked chart: a series per probe for one quantity ('vm' or an ion name). */
 	let { quantity, label }: { quantity: string; label: string } = $props();
 	const session = getSession();
-	const view = getView();
 	const ionIdx = $derived(session.experiment.ions.findIndex((i) => i.name === quantity));
-	const withBath = $derived(view.traceBath && ionIdx >= 0);
+	const withBath = $derived(session.bathProbe && ionIdx >= 0);
 
 	let host: HTMLDivElement;
 	let wrap: HTMLDivElement;
@@ -38,7 +36,7 @@
 		plot?.destroy();
 		const series: uPlot.Series[] = [{ label: 't' }];
 		session.probes.forEach((c) => series.push({ label: `${c}`, stroke: session.probeColors[c] ?? '#888', width: 1.5 }));
-		if (withBath) series.push({ label: 'bath', stroke: css('--muted-foreground'), width: 1, dash: [4, 3], scale: 'bath' });
+		if (withBath) series.push({ label: 'bath', stroke: session.bathColor, width: 1.5, dash: [5, 3], scale: 'bath' });
 		const fg = css('--muted-foreground'), grid = css('--border');
 		const font = '10px ui-monospace, monospace';
 		plot = new uPlot(
@@ -60,13 +58,21 @@
 	}
 
 	$effect(() => {
-		void session.probes; void session.probeColors; void quantity; void width; void height; void withBath;
+		void session.probes; void session.probeColors; void session.bathColor; void quantity; void width; void height; void withBath;
 		build();
 		return () => { plot?.destroy(); plot = null; };
 	});
 	$effect(() => {
 		void session.traceVersion;
 		plot?.setData(data());
+	});
+	// playback: put the cursor at the displayed frame's time
+	$effect(() => {
+		const ph = session.playhead;
+		if (!plot) return;
+		if (ph === null) { plot.setCursor({ left: -10, top: -10 }); return; }
+		const t = session.history[ph]?.t;
+		if (t !== undefined) plot.setCursor({ left: plot.valToPos(t, 'x'), top: 0 });
 	});
 	$effect(() => {
 		const ro = new ResizeObserver(([e]) => { width = Math.max(50, e.contentRect.width - 4); height = Math.max(60, e.contentRect.height - 14); });

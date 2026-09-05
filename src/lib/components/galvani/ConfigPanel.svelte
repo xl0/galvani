@@ -5,6 +5,10 @@
 	import { ghkVoltage, nernst } from '$lib/core/derived';
 	import { presets } from '$lib/presets';
 	import { basicCaIons, basicIons } from '$lib/core/defaults';
+	import { builtinShapes, maskFromFile, maskFromPath } from '$lib/mask';
+	import { loadLibrary, removeFromLibrary, saveToLibrary } from '$lib/library';
+	import Save from '@lucide/svelte/icons/save';
+	import type { Mask } from '$lib/core/generator';
 	import { channelModels, channelTypes } from '$lib/core/channels';
 	import { fmt } from '$lib/format';
 	import BigField from './BigField.svelte';
@@ -22,25 +26,36 @@
 	const nernstMv = $derived(ex.ions.map((ion) => nernst(ion, ion.cCell, ion.cEnv, ex.params.T) * 1e3));
 	const ghkMv = $derived(ghkVoltage(ex.ions, ex.ions.map((i) => i.cCell), ex.ions.map((i) => i.cEnv), ex.params.T) * 1e3);
 	const ghkNowMv = $derived.by(() => {
-		const s = session.snap, g = session.geom;
+		const s = session.view, g = session.geom;
 		if (!s || !g) return NaN;
 		const n = g.nCells;
 		const mean = (i: number) => { let a = 0; for (let c = 0; c < n; c++) a += s.cc[i * n + c]; return a / n; };
 		return ghkVoltage(ex.ions, ex.ions.map((_, i) => mean(i)), Array.from(s.ccEnv), ex.params.T) * 1e3;
 	});
 	const vmMeanMv = $derived.by(() => {
-		const s = session.snap;
+		const s = session.view;
 		if (!s || s.vmAve.length === 0) return NaN;
 		let a = 0; for (const v of s.vmAve) a += v;
 		return (a / s.vmAve.length) * 1e3;
 	});
 
+	let library = $state(loadLibrary());
+	const inLibrary = $derived(library.some((e) => e.name === ex.name));
 	function loadPreset(id: string) {
-		const p = presets.find((q) => q.id === id);
-		if (!p) return;
+		const exp = id.startsWith('lib:') ? library.find((e) => e.name === id.slice(4)) : presets.find((q) => q.id === id)?.make();
+		if (!exp) return;
 		session.probes = [];
-		session.setExperiment(p.make());
+		session.setExperiment(structuredClone(exp));
 		session.reset();
+	}
+	function savePreset() {
+		const name = prompt('Save this experiment as', ex.name)?.trim();
+		if (!name) return;
+		set((e) => (e.name = name));
+		library = saveToLibrary({ ...($state.snapshot(ex) as typeof ex), name });
+	}
+	function deletePreset() {
+		if (confirm(`Remove "${ex.name}" from your saved experiments?`)) library = removeFromLibrary(ex.name);
 	}
 	function addProfile() {
 		const n = ex.profiles.length;
@@ -50,7 +65,7 @@
 		view.tool = 'paint';
 	}
 	function addEvent(kind: SimEvent['kind']) {
-		const t = Math.ceil(session.snap?.t ?? 0);
+		const t = Math.ceil(session.view?.t ?? 0);
 		const profile = ex.profiles[0]?.id ?? '';
 		set((e) => {
 			if (kind === 'cut') e.events.push({ kind, t: t + 1, profile });
@@ -59,6 +74,30 @@
 		});
 	}
 	const hasCa = $derived(ex.ions.some((i) => i.name === 'Ca'));
+	const maskLabel = $derived.by(() => {
+		const m = ex.generator.mask;
+		if (m.kind === 'circle') return `disc r ${fmt(m.radius * 1e6, 3)} µm`;
+		if (m.kind === 'ellipse') return `ellipse ${fmt(m.rx * 1e6, 3)}×${fmt(m.ry * 1e6, 3)} µm`;
+		if (m.kind === 'rect') return `rect ${fmt(m.w * 1e6, 3)}×${fmt(m.h * 1e6, 3)} µm`;
+		return `shape "${m.name}"`;
+	});
+	function setShape(kind: string) {
+		const W = ex.generator.worldSize;
+		let mask: Mask;
+		if (kind === 'circle') mask = { kind, radius: 0.43 * W };
+		else if (kind === 'ellipse') mask = { kind, rx: 0.45 * W, ry: 0.28 * W };
+		else if (kind === 'rect') mask = { kind, w: 0.8 * W, h: 0.5 * W };
+		else mask = maskFromPath(builtinShapes[kind].path, builtinShapes[kind].label);
+		set((e) => (e.generator.mask = mask));
+	}
+	async function uploadShape(e: Event) {
+		const f = (e.target as HTMLInputElement).files?.[0];
+		if (!f) return;
+		try { const mask = await maskFromFile(f); set((x) => (x.generator.mask = mask)); }
+		catch (err) { session.error = String(err); }
+		(e.target as HTMLInputElement).value = '';
+	}
+	const shapeKind = $derived(ex.generator.mask.kind === 'bitmap' ? (Object.entries(builtinShapes).find(([, s]) => s.label === (ex.generator.mask as { name: string }).name)?.[0] ?? 'custom') : ex.generator.mask.kind);
 	function setIonSet(withCa: boolean) {
 		set((e) => { e.ions = structuredClone(withCa ? basicCaIons : basicIons); if (!withCa) e.channels = e.channels.filter((ch) => channelModels[ch.type]?.ion !== 'Ca'); });
 	}
@@ -73,19 +112,52 @@
 <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto">
 	<div class="flex items-center gap-2 border-b border-border px-3 py-2">
 		<select class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm" value="" onchange={(e) => { loadPreset((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ''; }}>
-			<option value="" disabled>Load a preset experiment…</option>
-			{#each presets as p (p.id)}<option value={p.id} title={p.blurb}>{p.name}</option>{/each}
+			<option value="" disabled>Load an experiment…</option>
+			<optgroup label="Presets">
+				{#each presets as p (p.id)}<option value={p.id} title={p.blurb}>{p.name}</option>{/each}
+			</optgroup>
+			{#if library.length}
+				<optgroup label="Saved in this browser">
+					{#each library as e (e.name)}<option value={'lib:' + e.name}>{e.name}</option>{/each}
+				</optgroup>
+			{/if}
 		</select>
+		<Button size="sm" variant="outline" class="h-8 px-2" onclick={savePreset} title="Save the current experiment in this browser"><Save class="size-4" /></Button>
+		{#if inLibrary}<Button size="sm" variant="ghost" class="h-8 px-2" onclick={deletePreset} title="Remove this saved experiment"><Trash class="size-4" /></Button>{/if}
 	</div>
 
 	<SettingsDialog title="Cluster" blurb="The tissue: a 2D sheet of cells built from a jittered hexagonal lattice, cut to a disc. Changing anything here rebuilds the cluster and restarts the run.">
 		{#snippet summary()}
-			{session.geom?.nCells ?? 0} cells · radius {fmt(ex.generator.clipRadius * 1e6, 3)} µm · cell {fmt(ex.generator.cellRadius * 1e6, 2)} µm · seed {ex.generator.seed}
+			{session.geom?.nCells ?? 0} cells · {maskLabel} · cell {fmt(ex.generator.cellRadius * 1e6, 2)} µm · seed {ex.generator.seed}
 		{/snippet}
 		{#snippet form()}
 			<BigField label="Seed" value={ex.generator.seed} step={1} description="Random seed for the lattice jitter. The same seed always gives the same cluster." onchange={(v) => set((e) => (e.generator.seed = Math.round(v)))} />
 			<BigField label="Cell radius" value={ex.generator.cellRadius} scale={1e6} unit="µm" description="Nominal cell size. Lattice spacing is twice this, so it sets how many cells fit in the cluster." onchange={(v) => set((e) => (e.generator.cellRadius = v))} />
-			<BigField label="Cluster radius" value={ex.generator.clipRadius} scale={1e6} unit="µm" description="Cells whose centre is farther than this from the middle are dropped." onchange={(v) => set((e) => (e.generator.clipRadius = v))} />
+			<div class="grid grid-cols-[10rem_1fr] items-start gap-x-3 gap-y-0.5 py-2">
+				<span class="pt-1.5 text-sm font-medium">Shape</span>
+				<span class="flex flex-wrap items-center gap-2">
+					<select class="h-8 rounded-md border border-input bg-background px-2 text-sm" value={shapeKind} onchange={(e) => { const k = (e.target as HTMLSelectElement).value; if (k !== 'custom') setShape(k); }}>
+						<option value="circle">Disc</option>
+						<option value="ellipse">Ellipse</option>
+						<option value="rect">Rectangle</option>
+						{#each Object.entries(builtinShapes) as [k, s] (k)}<option value={k}>{s.label}</option>{/each}
+						<option value="custom">Custom outline…</option>
+					</select>
+					<label class="cursor-pointer rounded-md border border-input px-2 py-1.5 text-sm hover:bg-accent">
+						upload SVG / PNG<input type="file" accept=".svg,.png,image/svg+xml,image/png" class="hidden" onchange={uploadShape} />
+					</label>
+				</span>
+				<span class="col-start-2 text-sm leading-snug text-muted-foreground">Which lattice cells are kept. An uploaded image is fitted to the world square; opaque, non-white pixels count as tissue.</span>
+			</div>
+			{#if ex.generator.mask.kind === 'circle'}
+				<BigField label="Cluster radius" value={ex.generator.mask.radius} scale={1e6} unit="µm" description="Cells whose centre is farther than this from the middle are dropped." onchange={(v) => set((e) => (e.generator.mask = { kind: 'circle', radius: v }))} />
+			{:else if ex.generator.mask.kind === 'ellipse'}
+				<BigField label="Half-width" value={ex.generator.mask.rx} scale={1e6} unit="µm" onchange={(v) => set((e) => { if (e.generator.mask.kind === 'ellipse') e.generator.mask.rx = v; })} />
+				<BigField label="Half-height" value={ex.generator.mask.ry} scale={1e6} unit="µm" onchange={(v) => set((e) => { if (e.generator.mask.kind === 'ellipse') e.generator.mask.ry = v; })} />
+			{:else if ex.generator.mask.kind === 'rect'}
+				<BigField label="Width" value={ex.generator.mask.w} scale={1e6} unit="µm" onchange={(v) => set((e) => { if (e.generator.mask.kind === 'rect') e.generator.mask.w = v; })} />
+				<BigField label="Height" value={ex.generator.mask.h} scale={1e6} unit="µm" onchange={(v) => set((e) => { if (e.generator.mask.kind === 'rect') e.generator.mask.h = v; })} />
+			{/if}
 			<BigField label="Disorder" value={ex.generator.disorder} step={0.05} min={0} description="0 gives perfect hexagons; 1 jitters each lattice point by up to a full cell diameter, giving irregular polygons." onchange={(v) => set((e) => (e.generator.disorder = v))} />
 			<BigField label="World size" value={ex.generator.worldSize} scale={1e6} unit="µm" description="Extent of the lattice before clipping. Must exceed twice the cluster radius." onchange={(v) => set((e) => (e.generator.worldSize = v))} />
 			<BigField label="Cell gap" value={ex.generator.cellSpacing} scale={1e9} unit="nm" description="Distance between neighbouring membranes; the length of a gap-junction channel. Flux through a junction scales as 1/gap." onchange={(v) => set((e) => (e.generator.cellSpacing = v))} />
@@ -151,7 +223,7 @@
 					<span class="text-muted-foreground">GHK resting Vm from these values</span><span class="font-mono tabular-nums">{fmt(ghkMv, 3)} mV</span>
 					<span class="text-muted-foreground">GHK Vm from current concentrations</span><span class="font-mono tabular-nums">{fmt(ghkNowMv, 3)} mV</span>
 					<span class="text-muted-foreground">Mean Vm now</span><span class="font-mono tabular-nums">{fmt(vmMeanMv, 3)} mV</span>
-					{#if session.snap}<span class="text-muted-foreground">Bath now</span><span class="font-mono tabular-nums">{ex.ions.map((ion, k) => `${ion.name} ${session.snap!.ccEnv[k].toFixed(2)}`).join('  ')} mM</span>{/if}
+					{#if session.view}<span class="text-muted-foreground">Bath now</span><span class="font-mono tabular-nums">{ex.ions.map((ion, k) => `${ion.name} ${session.view!.ccEnv[k].toFixed(2)}`).join('  ')} mM</span>{/if}
 				</div>
 			</div>
 			<div class="mt-3 flex items-center gap-3">

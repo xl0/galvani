@@ -48,9 +48,15 @@ const ParamsSchema = z.object({
 	deltaGATP: z.number(), cATP: z.number(), cADP: z.number(), cPi: z.number(),
 	alphaCa: z.number().default(5e-8), KmCa_Ca: z.number().default(1e-3), KmCa_ATP: z.number().default(0.5)
 });
+const MaskSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('circle'), radius: z.number().positive() }),
+	z.object({ kind: z.literal('ellipse'), rx: z.number().positive(), ry: z.number().positive() }),
+	z.object({ kind: z.literal('rect'), w: z.number().positive(), h: z.number().positive() }),
+	z.object({ kind: z.literal('bitmap'), name: z.string(), w: z.number().int().positive(), h: z.number().int().positive(), bits: z.string() })
+]);
 const GeneratorSchema = z.object({
 	seed: z.number(), worldSize: z.number(), cellRadius: z.number(), cellHeight: z.number(),
-	cellSpacing: z.number(), disorder: z.number(), scaleCell: z.number(), clipRadius: z.number()
+	cellSpacing: z.number(), disorder: z.number(), scaleCell: z.number(), mask: MaskSchema
 });
 
 /** The whole experiment definition: what gets serialized into the URL. */
@@ -70,7 +76,8 @@ export const ExperimentSchema = z.object({
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
 
-export const defaultExperiment: Experiment = {
+/** BETSE's default configuration; presets are derived from it. */
+export const baseExperiment: Experiment = {
 	version: 1,
 	name: 'BETSE basic',
 	generator: defaultGenerator,

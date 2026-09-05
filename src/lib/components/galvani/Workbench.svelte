@@ -4,6 +4,7 @@
 	import { ViewState, setView } from '$lib/sim/view.svelte';
 	import ClusterView from './ClusterView.svelte';
 	import Colorbar from './Colorbar.svelte';
+	import Playback from './Playback.svelte';
 	import ConfigPanel from './ConfigPanel.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import TracePanel from './TracePanel.svelte';
@@ -32,7 +33,8 @@
 	<div class="col-span-2"><Toolbar /></div>
 	<div class="min-h-0"><ClusterView /></div>
 	<div class="row-span-2 min-h-0 border-l border-border"><TracePanel /></div>
-	<div class="flex items-center border-t border-border">
-		<div class="flex-1"><Colorbar range={view.range} {unit} /></div>
+	<div>
+		<Playback />
+		<div class="border-t border-border"><Colorbar range={view.range} {unit} /></div>
 	</div>
 </div>

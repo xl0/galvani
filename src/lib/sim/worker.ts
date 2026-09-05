@@ -23,6 +23,7 @@ let traceT: number[] = [];
 let traceV: number[] = [];
 let traceB: number[] = [];
 let lastSnapshot = 0;
+let lastSnapT = -Infinity;
 let stepsSince = 0;
 let stepsSinceTime = 0;
 let stepsPerSec = 0;
@@ -58,6 +59,7 @@ function snapshot(): void {
 	};
 	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
+	lastSnapT = state.t;
 }
 
 function load(e: Experiment): void {
@@ -160,9 +162,12 @@ function doStep(): boolean {
 function tick(): void {
 	if (!running) return;
 	const t0 = performance.now();
+	// record a frame at least every endTime/1000 of simulated time so fast events are scrubbable
+	const frameDt = Math.max(exp.params.dt, exp.endTime / 1000);
 	for (let i = 0; i < stepsPerTick; i++) {
 		if (!doStep()) break;
 		if (state.t >= exp.endTime) { running = false; break; }
+		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot();
 	}
 	const dtms = performance.now() - t0;
 	stepsSince += stepsPerTick; stepsSinceTime += dtms;

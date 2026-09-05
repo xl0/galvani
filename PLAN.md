@@ -59,6 +59,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Profiles painting, cut brush, timed events (perm / pump / GJ factor, cut)
 - [x] Usability pass: presets, summary cards + explanatory settings dialogs, Nernst/GHK readouts, stacked traces, 14px base
 - [x] Fixed-range editing (freeze), trace CSV export, experiment JSON import/export, Cav channels
+- [x] Playback slider (frame history), bath probe, shape masks (built-in + SVG/PNG upload), saved-experiment library, excitable default
 - [ ] Polish: relative (x) controls instead of raw SI, keyboard shortcuts; rerun parity after any step.ts change
 - [x] HH channels (BETSE Na/K families) with parity fixture; initial Vm; excitable preset
 - [x] Ca2+ + Ca-ATPase (basic_Ca profile) with parity fixture; ion-set switch in the Ions dialog

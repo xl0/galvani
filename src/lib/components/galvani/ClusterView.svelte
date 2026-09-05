@@ -15,7 +15,7 @@
 
 	/** current field values per cell, in display units */
 	const values = $derived.by(() => {
-		const s = session.snap, g = session.geom;
+		const s = session.view, g = session.geom;
 		if (!s || !g) return null;
 		const out = new Float32Array(g.nCells);
 		if (view.field === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
@@ -36,7 +36,7 @@
 
 	/** per-membrane field values (vm and channel open fractions are native to membranes) */
 	const memValues = $derived.by(() => {
-		const s = session.snap, g = session.geom;
+		const s = session.view, g = session.geom;
 		if (!s || !g) return null;
 		if (view.field === 'vm') return Float32Array.from(s.vm, (v) => v * 1e3);
 		if (view.field.startsWith('P:')) return s.channels.find((ch) => ch.id === view.field.slice(2))?.P ?? null;
@@ -118,8 +118,8 @@
 		const border = css('--border');
 		// the bath: everything outside the cluster, tinted by the ion's bath concentration
 		const bi = session.experiment.ions.findIndex((x) => x.name === view.field);
-		if (bi >= 0 && session.snap) {
-			const t = Math.min(1, Math.max(0, (session.snap.ccEnv[bi] - lo) / (hi - lo)));
+		if (bi >= 0 && session.view) {
+			const t = Math.min(1, Math.max(0, (session.view.ccEnv[bi] - lo) / (hi - lo)));
 			ctx.globalAlpha = 0.35;
 			ctx.fillStyle = lut[Math.round(t * 255)];
 			ctx.fillRect(0, 0, width, height);
@@ -180,6 +180,20 @@
 			ctx.lineWidth = 1.5;
 			ctx.stroke();
 		}
+		// bath probe marker, parked at the top-left of the cluster's bounding box
+		if (session.bathProbe) {
+			const bx = toX(g.bounds[0]) - 14, by = toY(g.bounds[3]) - 14;
+			ctx.fillStyle = session.bathColor;
+			ctx.beginPath();
+			ctx.arc(bx, by, 5, 0, 2 * Math.PI);
+			ctx.fill();
+			ctx.strokeStyle = '#fff';
+			ctx.lineWidth = 1;
+			ctx.stroke();
+			ctx.fillStyle = css('--foreground');
+			ctx.font = '11px ui-monospace, monospace';
+			ctx.fillText('bath', bx + 8, by + 4);
+		}
 		// probes
 		ctx.font = '10px ui-monospace, monospace';
 		session.probes.forEach((c) => {
@@ -203,9 +217,9 @@
 
 	$effect(() => {
 		// dependencies: geometry, snapshot, view state, size, probes, profiles
-		void session.snap; void session.geom; void view.field; void view.colormap; void view.hover;
+		void session.view; void session.geom; void view.field; void view.colormap; void view.hover;
 		void view.zoom; void view.panX; void view.panY; void width; void height; void session.probes; void view.showMembranes;
-		void session.experiment.profiles; void range; void session.probeColors;
+		void session.experiment.profiles; void range; void session.probeColors; void session.bathProbe;
 		draw();
 	});
 
@@ -253,6 +267,7 @@
 		if (view.tool === 'probe') {
 			const c = cellAt(sx, sy);
 			if (c !== null) session.toggleProbe(c);
+			else session.toggleBathProbe();
 			return;
 		}
 		dragging = true;
@@ -276,13 +291,13 @@
 	}
 
 	const hoverInfo = $derived.by(() => {
-		const c = view.hover, s = session.snap, g = session.geom;
+		const c = view.hover, s = session.view, g = session.geom;
 		if (c === null || !s || !g || c >= g.nCells) return null;
 		const ions = session.experiment.ions.map((ion, i) => `${ion.name} ${(s.cc[i * g.nCells + c]).toFixed(2)}`).join('  ');
 		return `cell ${c}  Vm ${(s.vmAve[c] * 1e3).toFixed(2)} mV  ${ions}`;
 	});
 	const bathInfo = $derived.by(() => {
-		const s = session.snap;
+		const s = session.view;
 		if (!s) return '';
 		return 'bath  ' + session.experiment.ions.map((ion, i) => `${ion.name} ${s.ccEnv[i].toFixed(2)}`).join('  ') + ' mM';
 	});

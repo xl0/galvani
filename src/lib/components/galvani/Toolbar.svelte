@@ -25,7 +25,7 @@
 	const fields = $derived([
 		{ value: 'vm', label: 'Vm' },
 		...session.experiment.ions.map((i) => ({ value: i.name, label: `[${i.name}]` })),
-		...(session.snap?.channels ?? []).map((ch) => ({ value: `P:${ch.id}`, label: `open ${channelModels[ch.type]?.label ?? ch.type}` }))
+		...(session.view?.channels ?? []).map((ch) => ({ value: `P:${ch.id}`, label: `open ${channelModels[ch.type]?.label ?? ch.type}` }))
 	]);
 	const tools: { id: Tool; icon: typeof Crosshair; title: string }[] = [
 		{ id: 'probe', icon: Crosshair, title: 'Probe: click a cell to trace it' },
@@ -59,8 +59,8 @@
 	<Button size="sm" variant="ghost" class="h-7 px-2" onclick={() => session.step(1)} title="Step once" disabled={session.running}><StepForward class="size-3.5" /></Button>
 	<Button size="sm" variant="ghost" class="h-7 px-2" onclick={() => session.reset()} title="Reset to t = 0"><RotateCcw class="size-3.5" /></Button>
 
-	<span class="ml-2 font-mono tabular-nums text-muted-foreground">t = {(session.snap?.t ?? 0).toFixed(3)} s</span>
-	<span class="font-mono tabular-nums text-muted-foreground">step {session.snap?.step ?? 0}</span>
+	<span class="ml-2 font-mono tabular-nums text-muted-foreground">t = {(session.view?.t ?? 0).toFixed(3)} s</span>
+	<span class="font-mono tabular-nums text-muted-foreground">step {session.view?.step ?? 0}</span>
 
 	<div class="mx-2 h-5 w-px bg-border"></div>
 

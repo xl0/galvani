@@ -20,8 +20,34 @@ export interface GeneratorConfig {
 	disorder: number;
 	/** polygon shrink factor toward centroid (BETSE scale_cell) */
 	scaleCell: number;
-	/** keep cells whose centre lies within this radius of the world centre [m] */
-	clipRadius: number;
+	/** which lattice cells to keep, in world coordinates centred on the world square */
+	mask: Mask;
+}
+
+export type Mask =
+	| { kind: 'circle'; radius: number }
+	| { kind: 'ellipse'; rx: number; ry: number }
+	| { kind: 'rect'; w: number; h: number }
+	/** row-major bitmap over the world square, top row first; bits packed MSB-first, base64 */
+	| { kind: 'bitmap'; name: string; w: number; h: number; bits: string };
+
+/** Point-in-mask test for world coordinates (x, y) in a world of side W. */
+export function maskContains(mask: Mask, W: number): (x: number, y: number) => boolean {
+	const cx = W / 2, cy = W / 2;
+	switch (mask.kind) {
+		case 'circle': return (x, y) => (x - cx) ** 2 + (y - cy) ** 2 <= mask.radius ** 2;
+		case 'ellipse': return (x, y) => ((x - cx) / mask.rx) ** 2 + ((y - cy) / mask.ry) ** 2 <= 1;
+		case 'rect': return (x, y) => Math.abs(x - cx) <= mask.w / 2 && Math.abs(y - cy) <= mask.h / 2;
+		case 'bitmap': {
+			const bytes = Uint8Array.from(atob(mask.bits), (ch) => ch.charCodeAt(0));
+			return (x, y) => {
+				const px = Math.floor((x / W) * mask.w), py = Math.floor((1 - y / W) * mask.h);
+				if (px < 0 || py < 0 || px >= mask.w || py >= mask.h) return false;
+				const i = py * mask.w + px;
+				return (bytes[i >> 3] >> (7 - (i & 7)) & 1) === 1;
+			};
+		}
+	}
 }
 
 export const defaultGenerator: GeneratorConfig = {
@@ -32,7 +58,7 @@ export const defaultGenerator: GeneratorConfig = {
 	cellSpacing: 26e-9,
 	disorder: 0.4,
 	scaleCell: 0.99,
-	clipRadius: 65e-6
+	mask: { kind: 'circle', radius: 65e-6 }
 };
 
 /** mulberry32 PRNG: deterministic across platforms */
@@ -69,12 +95,12 @@ export function generateMesh(cfg: GeneratorConfig): Mesh {
 	const nPts = pts.length / 2;
 
 	// keep points inside the mask; a point's polygon must be finite (inside bounds)
-	const cx = W / 2, cy = W / 2;
+	const inside = maskContains(cfg.mask, W);
 	const keep = new Int32Array(nPts).fill(-1);
 	const kept: number[] = [];
 	for (let i = 0; i < nPts; i++) {
 		const x = pts[2 * i], y = pts[2 * i + 1];
-		if ((x - cx) ** 2 + (y - cy) ** 2 <= cfg.clipRadius ** 2 && voronoi.contains(i, x * S, y * S)) {
+		if (inside(x, y) && voronoi.contains(i, x * S, y * S)) {
 			keep[i] = kept.length;
 			kept.push(i);
 		}

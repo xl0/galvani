@@ -12,7 +12,8 @@ BETSE (see PLAN.md, docs/adr/0001).
     volume, per-cell totals. `finishMesh()` derives the cell totals.
     Dimension-agnostic (`dim`, interleaved coords).
   - `generator.ts` — seeded (mulberry32) jittered-hex -> Voronoi (d3-delaunay,
-    computed in micrometres for precision) -> circular clip -> shrink polygons.
+    computed in micrometres for precision) -> mask clip (`Mask`: circle /
+    ellipse / rect / packed bitmap over the world square) -> shrink polygons.
     Partners found by matching raw Voronoi edge midpoints.
   - `params.ts` — `Params` (dt, T, cm, tm, bath volume, GJ gating, Na/K pump
     constants), `Ion` (z, D_free, Dm, initial concs), constants F, R.
@@ -58,14 +59,22 @@ BETSE (see PLAN.md, docs/adr/0001).
   N steps, snapshots <= 30 Hz with transferable Float32Arrays, per-step probe
   samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
+  keeps a snapshot `history` (≤3000; worker records a frame at least every
+  endTime/1000 of sim time) with `playhead` / `seek()` for scrubbing (views
+  read `session.view`, the displayed frame), remaps regions/probes to nearest
+  cells when the cluster is rebuilt,
   applies edits (`edit()`), debounces the URL hash; traces share one time base
   (`traceT`, sampled every step even without probes) with null gaps for probes
   added later; bath concentrations are traced alongside (`traceBath`); probe colours are assigned
   on add and kept stable (`probeColors`); `view.svelte.ts` display
   state (field, colormap, tool, brush, zoom/pan, range).
-- `src/lib/presets.ts` — starter experiments (resting, leaky K+ patch, Na+
-  pulse, excitable sheet with action potentials, wound); region cells are picked by generating the mesh on the main
+- `src/lib/presets.ts` — starter experiments (resting = BETSE default, leaky K+
+  patch, Na+ pulse, excitable sheet = the page default, wound); built from
+  `baseExperiment`; region cells are picked by generating the mesh on the main
   thread. Loading a preset always resets the run.
+- `src/lib/mask.ts` — rasterizes an SVG path (built-in planarian / heart / ring)
+  or an uploaded SVG/PNG to a 160² bitmap mask (main thread, canvas).
+- `src/lib/library.ts` — saved experiments in localStorage ("Saved in this browser").
 - `src/lib/export.ts` — trace CSV download, experiment JSON download / file import.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
@@ -75,7 +84,9 @@ BETSE (see PLAN.md, docs/adr/0001).
   (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout; for
   ion fields the background is tinted with the bath concentration),
   `TracePanel` (toggleable quantities, one stacked `TraceChart` uPlot per
-  quantity, series per probe), `Colorbar`. ConfigPanel is summary cards; each
+  quantity, series per probe, dashed bath series on a right axis when the bath
+  is probed by clicking outside the cluster), `Playback` (frame slider),
+  `Colorbar`. ConfigPanel is summary cards; each
   physics category opens a `SettingsDialog` (large shadcn Dialog: `BigField`
   form left, model explanation right). Regions/Events stay inline (painting
   needs the canvas) using compact `NumField`s with tooltips.
