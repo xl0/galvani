@@ -43,7 +43,7 @@
 				cursor: { drag: { x: true, y: false } },
 				axes: [
 					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 22 },
-					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 46 }
+					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 58 }
 				],
 				scales: { x: { time: false } }
 			},
