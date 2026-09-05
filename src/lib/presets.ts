@@ -81,7 +81,7 @@ export const presets: Preset[] = [
 			e.profiles = [{ id: 'source', name: 'Source', color: '#9467bd', cells: cellsNear(e, W - 45e-6, W, 16e-6), Dm: {}, pumpScale: 1, gjScale: 1 }];
 			e.network = {
 				substances: [{
-					name: 'M', z: 0, Dm: 0, Do: 1e-10, Dgj: 1e-14, cCell: 0, cEnv: 0, updateIntra: false,
+					name: 'Morph', z: 0, Dm: 0, Do: 1e-10, Dgj: 1e-14, cCell: 0, cEnv: 0, updateIntra: false,
 					growth: { rProd: 0.2, rDecay: 0.02, profile: 'source', activators: [], inhibitors: [] },
 					gating: { ions: ['K'], HillK: 0.5, HillN: 2, peak: 2e-17, extracellular: false, activators: [], inhibitors: [] }
 				}],
