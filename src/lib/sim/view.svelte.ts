@@ -23,6 +23,10 @@ export class ViewState {
 	hover = $state<number | null>(null);
 	/** current display range of the field (written by ClusterView) */
 	range = $state<[number, number]>([0, 1]);
+	/** show rarely-needed parameters in the config panel */
+	advanced = $state(false);
+	/** quantities plotted in the trace panel: 'vm' or ion names */
+	traceQuantities = $state<string[]>(['vm', 'Na', 'K']);
 }
 
 const KEY = Symbol('galvani-view');

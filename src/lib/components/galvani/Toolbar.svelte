@@ -85,6 +85,7 @@
 	</Select.Root>
 
 	<div class="flex-1"></div>
+	{#if session.error}<span class="truncate text-destructive" title={session.error}>{session.error}</span>{/if}
 	<span class="font-mono tabular-nums text-muted-foreground">{session.stepsPerSec ? `${session.stepsPerSec.toFixed(0)} steps/s` : ''}</span>
 	<Button size="sm" variant="ghost" class="h-7 px-2" onclick={toggleDark} title="Toggle theme">
 		{#if dark}<Sun class="size-3.5" />{:else}<Moon class="size-3.5" />{/if}

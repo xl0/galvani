@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
-	let { title, open = true, children, actions }: { title: string; open?: boolean; children: Snippet; actions?: Snippet } = $props();
+	let { title, blurb = '', open = true, children, actions }: { title: string; blurb?: string; open?: boolean; children: Snippet; actions?: Snippet } = $props();
 	// svelte-ignore state_referenced_locally
 	let isOpen = $state(open);
 </script>
@@ -15,6 +15,9 @@
 		{#if actions}{@render actions()}{/if}
 	</div>
 	{#if isOpen}
-		<div class="flex flex-col gap-1 px-2 pb-2">{@render children()}</div>
+		<div class="flex flex-col gap-1 px-2 pb-2">
+			{#if blurb}<div class="mb-0.5 text-[11px] leading-snug text-muted-foreground">{blurb}</div>{/if}
+			{@render children()}
+		</div>
 	{/if}
 </div>

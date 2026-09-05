@@ -39,20 +39,27 @@ BETSE (see PLAN.md, docs/adr/0001).
     per-membrane Dm / pump / GJ factors from profiles + active timed events;
     `needsReload()` decides live update vs rebuild.
   - `cut.ts` — `cutCells()`: remove cells, re-index mesh + state, returns cellMap.
-  - `defaults.ts` — BETSE "basic" params/ions.
+  - `defaults.ts` — BETSE "basic" params/ions. `derived.ts` — Nernst and GHK
+    voltage readouts shown in the config panel.
 - `src/lib/sim/` — `worker.ts` runs the loop off-thread (setTimeout(0) ticks of
   N steps, snapshots <= 30 Hz with transferable Float32Arrays, per-step probe
   samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
   applies edits (`edit()`), debounces the URL hash; `view.svelte.ts` display
   state (field, colormap, tool, brush, zoom/pan, range).
+- `src/lib/presets.ts` — starter experiments (resting, leaky K+ patch, Na+
+  pulse, wound); region cells are picked by generating the mesh on the main
+  thread. Loading a preset always resets the run.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
 - `src/lib/components/galvani/` — `Workbench` (3-pane grid, owns session/view),
   `ConfigPanel` (sections of `NumField`s bound via `session.edit`), `Toolbar`
   (run/step/reset, field, colormap, tools, speed, theme), `ClusterView`
   (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout),
-  `TracePanel` (uPlot, series per probe), `Colorbar`.
+  `TracePanel` (toggleable quantities, one stacked `TraceChart` uPlot per
+  quantity, series per probe), `Colorbar`. ConfigPanel has a basic/advanced
+  toggle (`view.advanced`), section blurbs, and field tooltips (`help`).
+  In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
 - `src/lib/components/ui/` — shadcn-svelte components (style "nova", base
   zinc, radius small; `components.json`). Theme tokens live in `src/app.css`.

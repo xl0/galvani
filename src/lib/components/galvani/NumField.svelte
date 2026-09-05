@@ -7,7 +7,8 @@
 		unit = '',
 		scale = 1,
 		step = undefined as number | undefined,
-		min = undefined as number | undefined
+		min = undefined as number | undefined,
+		help = ''
 	}: {
 		label: string;
 		value: number;
@@ -16,6 +17,8 @@
 		scale?: number;
 		step?: number;
 		min?: number;
+		/** plain-language tooltip: what it is, what raising it does */
+		help?: string;
 	} = $props();
 
 	let text = $derived(String(+(value * scale).toPrecision(6)));
@@ -26,8 +29,8 @@
 	}
 </script>
 
-<label class="flex min-w-0 items-center gap-1.5 text-xs">
-	<span class="w-20 shrink-0 truncate text-muted-foreground" title={label}>{label}</span>
+<label class="flex min-w-0 items-center gap-1.5 text-xs" title={help}>
+	<span class="w-20 shrink-0 truncate text-muted-foreground {help ? 'cursor-help underline decoration-dotted underline-offset-2' : ''}">{label}</span>
 	<input
 		type="number"
 		class="h-6 w-full min-w-0 rounded border border-input bg-background px-1.5 font-mono text-xs tabular-nums outline-none focus:ring-1 focus:ring-ring"

@@ -57,6 +57,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Worker + snapshot protocol; zod experiment schema; deflate+base64url URL hash
 - [x] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + uPlot traces
 - [x] Profiles painting, cut brush, timed events (perm / pump / GJ factor, cut)
+- [x] Usability pass: presets, basic/advanced, blurbs + tooltips, Nernst/GHK readouts, stacked multi-quantity traces
 - [ ] Polish: membrane-level rendering (per-membrane Vm), fixed-range editing, trace export,
-      experiment presets, keyboard shortcuts; rerun parity after any step.ts change
+      relative (x) controls instead of raw SI, keyboard shortcuts; rerun parity after any step.ts change
 - [ ] Phase 2: HH channels, Ca; fast equivalent-circuit solver; env grid

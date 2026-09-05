@@ -127,7 +127,12 @@ export class SimSession {
 		}, 300);
 	}
 
-	run(): void { this.error = null; this.post({ type: 'run' }); this.running = true; }
+	run(): void {
+		this.error = null;
+		if (this.snap && this.snap.t >= this.experiment.endTime) this.reset();
+		this.post({ type: 'run' });
+		this.running = true;
+	}
 	pause(): void { this.post({ type: 'pause' }); }
 	step(n = 1): void { this.post({ type: 'step', n }); }
 	reset(): void {

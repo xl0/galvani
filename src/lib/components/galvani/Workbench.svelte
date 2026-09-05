@@ -14,6 +14,7 @@
 	setView(view);
 
 	onMount(() => {
+		if (import.meta.env.DEV) (window as unknown as { galvani: unknown }).galvani = { session, view };
 		session.start();
 		return () => session.stop();
 	});
@@ -33,6 +34,5 @@
 	<div class="row-span-2 min-h-0 border-l border-border"><TracePanel /></div>
 	<div class="flex items-center border-t border-border">
 		<div class="flex-1"><Colorbar range={view.range} {unit} /></div>
-		{#if session.error}<div class="px-2 text-xs text-destructive">{session.error}</div>{/if}
 	</div>
 </div>
