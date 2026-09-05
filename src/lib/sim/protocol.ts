@@ -47,7 +47,8 @@ export type ToWorker =
 	| { type: 'step'; n: number }
 	| { type: 'probes'; cells: number[] }
 	| { type: 'cut'; cells: number[] }
-	| { type: 'speed'; stepsPerTick: number };
+	/** target simulated seconds per real second, or 'max' */
+	| { type: 'speed'; factor: number | 'max' };
 
 export type FromWorker =
 	| { type: 'geom'; geom: MeshGeom; reason: 'load' | 'cut'; cellMap?: Int32Array }

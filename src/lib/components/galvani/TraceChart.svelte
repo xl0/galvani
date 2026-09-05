@@ -43,7 +43,7 @@
 			{
 				width, height, series,
 				legend: { show: false },
-				cursor: { drag: { x: true, y: false } },
+				cursor: { drag: { x: false, y: false } },
 				axes: [
 					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 22 },
 					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 58 },
@@ -55,6 +55,18 @@
 			data(),
 			host
 		);
+		// click on the chart -> scrub playback to that time
+		const p = plot;
+		// uPlot swallows 'click' in the capture phase whenever the pointer moved between down and up,
+		// so detect the click ourselves.
+		let down: [number, number] | null = null;
+		p.over.addEventListener('mousedown', (e: MouseEvent) => { down = [e.clientX, e.clientY]; });
+		p.over.addEventListener('mouseup', (e: MouseEvent) => {
+			if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+			down = null;
+			const t = p.posToVal(e.clientX - p.over.getBoundingClientRect().left, 'x');
+			if (Number.isFinite(t)) session.seekTime(t);
+		});
 	}
 
 	$effect(() => {

@@ -41,7 +41,11 @@
 		document.documentElement.classList.toggle('dark', dark);
 		localStorage.setItem('galvani-theme', dark ? 'dark' : 'light');
 	}
-	const speeds = [1, 5, 25, 100, 400];
+	const speeds: { value: string; label: string }[] = [
+		{ value: '0.01', label: '0.01× real time' }, { value: '0.1', label: '0.1×' }, { value: '1', label: '1× real time' }, { value: '10', label: '10×' }, { value: '100', label: '100×' }, { value: 'max', label: 'max speed' }
+	];
+	const speedLabel = $derived(speeds.find((x) => x.value === String(session.speed))?.label ?? String(session.speed));
+	const achieved = $derived(session.stepsPerSec ? session.stepsPerSec * session.experiment.params.dt : 0);
 	async function doImport() {
 		try {
 			const exp = await importExperimentJson();
@@ -93,10 +97,10 @@
 	{/if}
 
 	<div class="mx-2 h-5 w-px bg-border"></div>
-	<Select.Root type="single" value={String(session.stepsPerTick)} onValueChange={(v) => session.setSpeed(Number(v))}>
-		<Select.Trigger class="h-8 w-28 text-sm" size="sm">{session.stepsPerTick} steps/tick</Select.Trigger>
+	<Select.Root type="single" value={String(session.speed)} onValueChange={(v) => session.setSpeed(v === 'max' ? 'max' : Number(v))}>
+		<Select.Trigger class="h-8 w-36 text-sm" size="sm" title="Target simulation speed relative to real time">{speedLabel}</Select.Trigger>
 		<Select.Content>
-			{#each speeds as s (s)}<Select.Item value={String(s)} label={`${s} steps/tick`} />{/each}
+			{#each speeds as s (s.value)}<Select.Item value={s.value} label={s.label} />{/each}
 		</Select.Content>
 	</Select.Root>
 
@@ -106,7 +110,7 @@
 	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={() => exportTracesCsv(session)} title="Download probe traces as CSV" disabled={session.probes.length === 0}><FileSpreadsheet class="size-4" /></Button>
 	<div class="flex-1"></div>
 	{#if session.error}<span class="truncate text-destructive" title={session.error}>{session.error}</span>{/if}
-	<span class="font-mono tabular-nums text-muted-foreground">{session.stepsPerSec ? `${session.stepsPerSec.toFixed(0)} steps/s` : ''}</span>
+	<span class="font-mono tabular-nums text-muted-foreground" title="Achieved: simulated seconds per real second, and integration steps per second">{session.stepsPerSec && session.running ? `${achieved >= 10 ? achieved.toFixed(0) : achieved.toPrecision(2)}× · ${session.stepsPerSec.toFixed(0)} steps/s` : ''}</span>
 	<Button size="sm" variant="ghost" class="h-7 px-2" onclick={toggleDark} title="Toggle theme">
 		{#if dark}<Sun class="size-3.5" />{:else}<Moon class="size-3.5" />{/if}
 	</Button>

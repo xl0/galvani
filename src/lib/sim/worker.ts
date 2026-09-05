@@ -12,7 +12,9 @@ let exp: Experiment;
 let mesh: Mesh;
 let state: SimState;
 let running = false;
-let stepsPerTick = 25;
+let speed: number | 'max' = 'max';
+/** wall-clock / sim-time anchor for pacing at a fixed speed factor */
+let anchor = { wall: 0, t: 0 };
 let probes: number[] = [];
 const firedCuts = new Set<number>();
 let hasTimedEvents = false;
@@ -159,21 +161,26 @@ function doStep(): boolean {
 	return true;
 }
 
+/** One scheduler tick: run steps for ~12 ms of wall time, or until the paced sim time is caught up. */
 function tick(): void {
 	if (!running) return;
 	const t0 = performance.now();
-	// record a frame at least every endTime/1000 of simulated time so fast events are scrubbable
-	const frameDt = Math.max(exp.params.dt, exp.endTime / 1000);
-	for (let i = 0; i < stepsPerTick; i++) {
+	// record a frame at least every endTime/600 of simulated time so fast events are scrubbable
+	const frameDt = Math.max(exp.params.dt, exp.endTime / 600);
+	const allowedT = speed === 'max' ? Infinity : anchor.t + ((t0 - anchor.wall) / 1000) * speed;
+	let n = 0;
+	while (state.t < allowedT && performance.now() - t0 < 12) {
 		if (!doStep()) break;
+		n++;
 		if (state.t >= exp.endTime) { running = false; break; }
 		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot();
 	}
 	const dtms = performance.now() - t0;
-	stepsSince += stepsPerTick; stepsSinceTime += dtms;
+	stepsSince += n; stepsSinceTime += dtms;
 	if (stepsSinceTime > 500) { stepsPerSec = (stepsSince * 1000) / stepsSinceTime; stepsSince = 0; stepsSinceTime = 0; }
 	if (performance.now() - lastSnapshot > 33 || !running) snapshot();
-	if (running) setTimeout(tick, 0);
+	// when paced and ahead of schedule, sleep until the next step is due
+	if (running) setTimeout(tick, n === 0 && speed !== 'max' ? Math.max(1, Math.min(50, ((state.t - allowedT) / speed) * 1000)) : 0);
 }
 
 self.onmessage = (ev: MessageEvent<ToWorker>) => {
@@ -181,11 +188,11 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
 	switch (msg.type) {
 		case 'load': load(msg.experiment); break;
 		case 'update': update(msg.experiment); break;
-		case 'run': if (!running) { running = true; stepsSince = 0; stepsSinceTime = 0; tick(); } break;
+		case 'run': if (!running) { running = true; stepsSince = 0; stepsSinceTime = 0; anchor = { wall: performance.now(), t: state.t }; tick(); } break;
 		case 'pause': running = false; snapshot(); break;
 		case 'step': running = false; for (let i = 0; i < msg.n; i++) if (!doStep()) break; snapshot(); break;
 		case 'probes': probes = msg.cells.filter((c) => c < mesh.nCells); traceT = []; traceV = []; traceB = []; if (!running) snapshot(); break;
 		case 'cut': doCut(msg.cells); snapshot(); break;
-		case 'speed': stepsPerTick = Math.max(1, msg.stepsPerTick); break;
+		case 'speed': speed = msg.factor; anchor = { wall: performance.now(), t: state.t }; break;
 	}
 };

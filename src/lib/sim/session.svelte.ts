@@ -45,7 +45,8 @@ export class SimSession {
 	/** the bath can be probed too (click outside the cluster with the probe tool) */
 	bathProbe = $state(false);
 	bathColor = $state('');
-	stepsPerTick = $state(25);
+	/** simulated seconds per real second, or 'max' */
+	speed = $state<number | 'max'>('max');
 
 	static MAX_HISTORY = 3000;
 	private worker: Worker | null = null;
@@ -225,7 +226,17 @@ export class SimSession {
 		this.post({ type: 'load', experiment: $state.snapshot(this.experiment) });
 		this.post({ type: 'probes', cells: $state.snapshot(this.probes) });
 	}
-	setSpeed(stepsPerTick: number): void { this.stepsPerTick = stepsPerTick; this.post({ type: 'speed', stepsPerTick }); }
+	setSpeed(factor: number | 'max'): void { this.speed = factor; this.post({ type: 'speed', factor }); }
+
+	/** Scrub to the recorded frame nearest to simulated time t. */
+	seekTime(t: number): void {
+		const h = this.history;
+		if (h.length === 0) return;
+		let lo = 0, hi = h.length - 1;
+		while (lo < hi) { const mid = (lo + hi) >> 1; if (h[mid].t < t) lo = mid + 1; else hi = mid; }
+		if (lo > 0 && Math.abs(h[lo - 1].t - t) < Math.abs(h[lo].t - t)) lo--;
+		this.seek(lo);
+	}
 
 	private freeColor(): string {
 		const used = new Set([...Object.values(this.probeColors), this.bathColor]);

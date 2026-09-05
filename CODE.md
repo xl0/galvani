@@ -55,9 +55,10 @@ BETSE (see PLAN.md, docs/adr/0001).
   - `cut.ts` — `cutCells()`: remove cells, re-index mesh + state, returns cellMap.
   - `defaults.ts` — BETSE "basic" params/ions. `derived.ts` — Nernst and GHK
     voltage readouts shown in the config panel.
-- `src/lib/sim/` — `worker.ts` runs the loop off-thread (setTimeout(0) ticks of
-  N steps, snapshots <= 30 Hz with transferable Float32Arrays, per-step probe
-  samples batched into `TraceChunk`); `protocol.ts` message types;
+- `src/lib/sim/` — `worker.ts` runs the loop off-thread (ticks of ≤12 ms wall
+  time; paced to a target speed factor × real time or 'max' via a wall/sim
+  time anchor; snapshots ≤ 30 Hz plus one per endTime/600 of sim time, with
+  transferable Float32Arrays; per-step probe samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
   keeps a snapshot `history` (≤3000; worker records a frame at least every
   endTime/1000 of sim time) with `playhead` / `seek()` for scrubbing (views
