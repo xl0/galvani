@@ -18,7 +18,7 @@
 		session.start();
 		return () => session.stop();
 	});
-	const unit = $derived(view.field === 'vm' ? 'mV' : 'mM');
+	const unit = $derived(view.field === 'vm' ? 'mV' : view.field.startsWith('P:') ? 'open' : 'mM');
 </script>
 
 <div class="grid h-screen w-screen grid-cols-[360px_minmax(0,1fr)_400px] grid-rows-[auto_minmax(0,1fr)_auto] bg-background text-foreground">

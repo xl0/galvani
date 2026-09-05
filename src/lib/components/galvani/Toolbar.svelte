@@ -3,7 +3,8 @@
 	import * as Select from '$lib/components/ui/select';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView, type Tool } from '$lib/sim/view.svelte';
-	import { colormapNames, type ColormapName } from '$lib/viz/colormap';
+	import { colormapNames } from '$lib/viz/colormap';
+	import { channelModels } from '$lib/core/channels';
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
 	import StepForward from '@lucide/svelte/icons/step-forward';
@@ -17,7 +18,11 @@
 	const session = getSession();
 	const view = getView();
 
-	const fields = $derived([{ value: 'vm', label: 'Vm' }, ...session.experiment.ions.map((i) => ({ value: i.name, label: `[${i.name}]` }))]);
+	const fields = $derived([
+		{ value: 'vm', label: 'Vm' },
+		...session.experiment.ions.map((i) => ({ value: i.name, label: `[${i.name}]` })),
+		...(session.snap?.channels ?? []).map((ch) => ({ value: `P:${ch.id}`, label: `open ${channelModels[ch.type]?.label ?? ch.type}` }))
+	]);
 	const tools: { id: Tool; icon: typeof Crosshair; title: string }[] = [
 		{ id: 'probe', icon: Crosshair, title: 'Probe: click a cell to trace it' },
 		{ id: 'paint', icon: Brush, title: 'Paint cells into the active profile (shift: erase)' },
@@ -50,7 +55,7 @@
 	<div class="mx-2 h-5 w-px bg-border"></div>
 
 	<Select.Root type="single" bind:value={view.field}>
-		<Select.Trigger class="h-8 w-24 text-sm" size="sm">{fields.find((f) => f.value === view.field)?.label}</Select.Trigger>
+		<Select.Trigger class="h-8 w-32 text-sm" size="sm">{fields.find((f) => f.value === view.field)?.label ?? view.field}</Select.Trigger>
 		<Select.Content>
 			{#each fields as f (f.value)}<Select.Item value={f.value} label={f.label} />{/each}
 		</Select.Content>
@@ -62,6 +67,7 @@
 		</Select.Content>
 	</Select.Root>
 	<label class="ml-1 flex items-center gap-1 text-muted-foreground"><input type="checkbox" bind:checked={view.autoRange} /> auto range</label>
+	<label class="ml-1 flex items-center gap-1 text-muted-foreground" title="Colour each membrane segment by its own value (Vm, channel open fraction) instead of the cell average"><input type="checkbox" bind:checked={view.showMembranes} /> membranes</label>
 
 	<div class="mx-2 h-5 w-px bg-border"></div>
 

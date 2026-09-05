@@ -52,9 +52,10 @@ function snapshot(): void {
 	const snap = {
 		t: state.t, step: state.step, running, stepsPerSec,
 		vmAve: Float32Array.from(state.vmAve), vm: Float32Array.from(state.vm), cc,
-		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen), trace
+		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen),
+		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })), trace
 	};
-	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer]);
+	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
 }
 

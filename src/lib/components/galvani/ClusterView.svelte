@@ -19,7 +19,14 @@
 		if (!s || !g) return null;
 		const out = new Float32Array(g.nCells);
 		if (view.field === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
-		else {
+		else if (view.field.startsWith('P:')) {
+			// channel open fraction: cell value = mean over its membranes
+			const mv = memValues;
+			if (!mv) return null;
+			const n = new Int32Array(g.nCells);
+			for (let m = 0; m < g.nMems; m++) { out[g.memToCell[m]] += mv[m]; n[g.memToCell[m]]++; }
+			for (let c = 0; c < g.nCells; c++) out[c] /= Math.max(1, n[c]);
+		} else {
 			const i = session.experiment.ions.findIndex((x) => x.name === view.field);
 			if (i < 0) return null;
 			for (let c = 0; c < g.nCells; c++) out[c] = s.cc[i * g.nCells + c];
@@ -27,10 +34,20 @@
 		return out;
 	});
 
+	/** per-membrane field values (vm and channel open fractions are native to membranes) */
+	const memValues = $derived.by(() => {
+		const s = session.snap, g = session.geom;
+		if (!s || !g) return null;
+		if (view.field === 'vm') return Float32Array.from(s.vm, (v) => v * 1e3);
+		if (view.field.startsWith('P:')) return s.channels.find((ch) => ch.id === view.field.slice(2))?.P ?? null;
+		return null;
+	});
+
 	const range = $derived.by(() => {
-		if (!values || view.autoRange === false) return [view.min, view.max] as [number, number];
+		const src = view.showMembranes && memValues ? memValues : values;
+		if (!src || view.autoRange === false) return [view.min, view.max] as [number, number];
 		let lo = Infinity, hi = -Infinity;
-		for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
+		for (const v of src) { if (v < lo) lo = v; if (v > hi) hi = v; }
 		if (!(hi > lo)) { hi = lo + 1e-9; }
 		return [lo, hi] as [number, number];
 	});
@@ -113,6 +130,22 @@
 			ctx.strokeStyle = border;
 			ctx.stroke();
 		}
+		// per-membrane values: colour each polygon edge (membrane m spans verts m -> next in its cell)
+		if (view.showMembranes && memValues) {
+			ctx.lineCap = 'butt';
+			ctx.lineWidth = Math.max(2, scale * 1.2e-6);
+			for (let m = 0; m < g.nMems; m++) {
+				const c = g.memToCell[m];
+				const a = g.vertStart[c], b = g.vertStart[c + 1];
+				const m2 = m + 1 < b ? m + 1 : a;
+				const t = Math.min(1, Math.max(0, (memValues[m] - lo) / (hi - lo)));
+				ctx.strokeStyle = lut[Math.round(t * 255)];
+				ctx.beginPath();
+				ctx.moveTo(toX(g.verts[2 * m]), toY(g.verts[2 * m + 1]));
+				ctx.lineTo(toX(g.verts[2 * m2]), toY(g.verts[2 * m2 + 1]));
+				ctx.stroke();
+			}
+		}
 		// profile outlines
 		for (const p of session.experiment.profiles) {
 			ctx.strokeStyle = p.color;
@@ -162,7 +195,7 @@
 	$effect(() => {
 		// dependencies: geometry, snapshot, view state, size, probes, profiles
 		void session.snap; void session.geom; void view.field; void view.colormap; void view.hover;
-		void view.zoom; void view.panX; void view.panY; void width; void height; void session.probes;
+		void view.zoom; void view.panX; void view.panY; void width; void height; void session.probes; void view.showMembranes;
 		void session.experiment.profiles; void range;
 		draw();
 	});

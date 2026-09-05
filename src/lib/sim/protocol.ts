@@ -32,6 +32,8 @@ export interface Snapshot {
 	cc: Float32Array;
 	ccEnv: Float32Array;
 	gjOpen: Float32Array;
+	/** open fraction per membrane for each active channel */
+	channels: { id: string; type: string; P: Float32Array }[];
 	trace: TraceChunk;
 }
 
