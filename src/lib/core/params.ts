@@ -25,6 +25,10 @@ export interface Params {
 	cATP: number;
 	cADP: number;
 	cPi: number;
+	/** Ca-ATPase max rate [mol/m2 s] and Michaelis constants [mmol/L] (used when a Ca ion exists) */
+	alphaCa: number;
+	KmCa_Ca: number;
+	KmCa_ATP: number;
 }
 
 export interface Ion {

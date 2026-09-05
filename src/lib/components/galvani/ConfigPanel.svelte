@@ -4,6 +4,7 @@
 	import type { SimEvent } from '$lib/core/experiment';
 	import { ghkVoltage, nernst } from '$lib/core/derived';
 	import { presets } from '$lib/presets';
+	import { basicCaIons, basicIons } from '$lib/core/defaults';
 	import { channelModels, channelTypes } from '$lib/core/channels';
 	import { fmt } from '$lib/format';
 	import BigField from './BigField.svelte';
@@ -56,6 +57,10 @@
 			else if (kind === 'perm') e.events.push({ kind, t: t + 1, tEnd: t + 6, ion: 'Na', profile: '', factor: 20 });
 			else e.events.push({ kind, t: t + 1, tEnd: t + 6, profile: '', factor: 0 });
 		});
+	}
+	const hasCa = $derived(ex.ions.some((i) => i.name === 'Ca'));
+	function setIonSet(withCa: boolean) {
+		set((e) => { e.ions = structuredClone(withCa ? basicCaIons : basicIons); e.channels = e.channels.filter((ch) => (channelModels[ch.type]?.ion as string) !== 'Ca'); });
 	}
 	function addChannel() {
 		const id = `ch${Date.now().toString(36)}`;
@@ -149,11 +154,18 @@
 					{#if session.snap}<span class="text-muted-foreground">Bath now</span><span class="font-mono tabular-nums">{ex.ions.map((ion, k) => `${ion.name} ${session.snap!.ccEnv[k].toFixed(2)}`).join('  ')} mM</span>{/if}
 				</div>
 			</div>
+			<div class="mt-3 flex items-center gap-3">
+				<span class="text-sm font-medium">Ion set</span>
+				<Button size="sm" variant={hasCa ? 'outline' : 'default'} onclick={() => setIonSet(false)}>Na⁺ K⁺ P⁻ M⁻</Button>
+				<Button size="sm" variant={hasCa ? 'default' : 'outline'} onclick={() => setIonSet(true)}>+ Ca²⁺</Button>
+				<span class="text-sm text-muted-foreground">Switching resets concentrations to BETSE's profile values.</span>
+			</div>
 			<p class="mt-3 text-sm text-muted-foreground">Changing initial concentrations rebuilds the state and restarts. Changing permeabilities applies live.</p>
 		{/snippet}
 		{#snippet explain()}
 			<h4>The ions</h4>
 			<p><b>Na⁺</b> and <b>K⁺</b> are the actors. <b>P⁻</b> stands for impermeant intracellular proteins and is fixed. <b>M⁻</b> is a generic mobile anion (think Cl⁻) chosen so both compartments start electrically neutral. Concentrations are in mmol/L.</p>
+			<p>Optionally <b>Ca²⁺</b>: divalent, 2 mM outside and only 0.1 µM inside, held there by a Ca-ATPase pump (see Na/K pump → Ca pump). Its Nernst potential is far positive, so any Ca²⁺ permeability depolarizes and floods the cell with calcium: the basis of calcium signalling.</p>
 			<h4>Permeability</h4>
 			<p>Each ion crosses a membrane segment with the Goldman-Hodgkin-Katz flux: proportional to permeability, driven by the concentration difference and the voltage. Permeability here is a diffusion constant through a 7.5 nm membrane, so the numbers are tiny; 1e-18 m²/s is a modest leak, 1e-17 a leaky channel-rich membrane.</p>
 			<h4>Nernst and GHK voltages</h4>
@@ -168,8 +180,8 @@
 		{/snippet}
 	</SettingsDialog>
 
-	<SettingsDialog title="Na/K pump" blurb="The ATP-driven pump that moves 3 Na⁺ out and 2 K⁺ in per cycle. It is what builds and holds the gradients.">
-		{#snippet summary()}max rate {fmt(ex.params.alphaNaK, 2)} mol/m²·s · ATP {fmt(ex.params.cATP, 2)} mM{/snippet}
+	<SettingsDialog title={hasCa ? 'Pumps' : 'Na/K pump'} blurb="ATP-driven pumps. Na/K-ATPase moves 3 Na⁺ out and 2 K⁺ in per cycle and builds the gradients; the Ca²⁺ pump keeps cytosolic calcium near zero.">
+		{#snippet summary()}Na/K {fmt(ex.params.alphaNaK, 2)} mol/m²·s{#if hasCa} · Ca {fmt(ex.params.alphaCa, 2)}{/if} · ATP {fmt(ex.params.cATP, 2)} mM{/snippet}
 		{#snippet form()}
 			<BigField label="Max rate" value={ex.params.alphaNaK} unit="mol/m²·s" description="Maximum Na⁺ flux per membrane area at saturation. Set 0 to switch the pump off and watch gradients decay; 1e-6 polarizes ten times faster." onchange={(v) => set((e) => (e.params.alphaNaK = v))} />
 			<BigField label="ATP" value={ex.params.cATP} unit="mM" description="Cytosolic ATP. With ADP and Pi it sets the free energy available per cycle and the pump's saturation." onchange={(v) => set((e) => (e.params.cATP = v))} />
@@ -179,14 +191,22 @@
 			<BigField label="Km K⁺" value={ex.params.KmNK_K} unit="mM" description="Extracellular K⁺ giving half-maximal activity." onchange={(v) => set((e) => (e.params.KmNK_K = v))} />
 			<BigField label="Km ATP" value={ex.params.KmNK_ATP} unit="mM" onchange={(v) => set((e) => (e.params.KmNK_ATP = v))} />
 			<BigField label="ΔG°(ATP)" value={ex.params.deltaGATP} unit="J/mol" description="Standard free energy of ATP hydrolysis. More negative = pump can build steeper gradients before stalling." onchange={(v) => set((e) => (e.params.deltaGATP = v))} />
+			{#if hasCa}
+				<div class="mt-4 mb-1 text-sm font-semibold">Ca²⁺ pump (PMCA)</div>
+				<BigField label="Max rate" value={ex.params.alphaCa} unit="mol/m²·s" description="Maximum Ca²⁺ extrusion per membrane area. Keeps cytosolic Ca²⁺ at ~0.1 µM against 2 mM outside." onchange={(v) => set((e) => (e.params.alphaCa = v))} />
+				<BigField label="Km Ca²⁺" value={ex.params.KmCa_Ca} unit="mM" description="Intracellular Ca²⁺ giving half-maximal pumping." onchange={(v) => set((e) => (e.params.KmCa_Ca = v))} />
+				<BigField label="Km ATP" value={ex.params.KmCa_ATP} unit="mM" onchange={(v) => set((e) => (e.params.KmCa_ATP = v))} />
+			{/if}
 		{/snippet}
 		{#snippet explain()}
 			<h4>How it works</h4>
 			<p>Each membrane segment carries pump activity. The rate is Michaelis-Menten in intracellular Na⁺, extracellular K⁺ and ATP (the Km values), multiplied by a thermodynamic term <code>1 − Q/K<sub>eq</sub></code> that goes to zero when the ion gradients plus the membrane voltage store as much energy as ATP hydrolysis releases. So the pump slows down and stops by itself as the cell polarizes.</p>
 			<h4>Why it changes voltage</h4>
 			<p>Three charges out for two in: each cycle removes one net positive charge from the cell. That alone drives Vm negative even when permeabilities give a GHK voltage near zero, which is the situation in the default cluster.</p>
+			<h4>Ca²⁺ pump</h4>
+			<p>Same construction with 1:1 stoichiometry (one Ca²⁺ out per ATP, two charges): Michaelis-Menten in cytosolic Ca²⁺ and ATP, times the thermodynamic term. With a 20 000-fold gradient it runs near its stall point most of the time.</p>
 			<h4>Regions</h4>
-			<p>The "pump ×" multiplier on a region scales this rate for its cells. A region with pump × 0 slowly depolarizes toward the GHK voltage as gradients leak away.</p>
+			<p>The "pump ×" multiplier on a region scales the Na/K rate for its cells. A region with pump × 0 slowly depolarizes toward the GHK voltage as gradients leak away.</p>
 		{/snippet}
 	</SettingsDialog>
 

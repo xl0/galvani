@@ -57,7 +57,10 @@ export function paramsFromBetse(fx: BetseFixture): Params {
 		deltaGATP: q.deltaGATP,
 		cATP: q.cATP,
 		cADP: q.cADP,
-		cPi: q.cPi
+		cPi: q.cPi,
+		alphaCa: q.alpha_Ca ?? 5e-8,
+		KmCa_Ca: q.KmCa_Ca ?? 1e-3,
+		KmCa_ATP: q.KmCa_ATP ?? 0.5
 	};
 }
 

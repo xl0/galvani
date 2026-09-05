@@ -61,6 +61,6 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [ ] Polish: membrane-level rendering (per-membrane Vm), fixed-range editing, trace export,
       relative (x) controls instead of raw SI, keyboard shortcuts; rerun parity after any step.ts change
 - [x] HH channels (BETSE Na/K families) with parity fixture; initial Vm; excitable preset
-- [ ] Ca2+ + Ca-ATPase (basic_Ca profile) with parity fixture
+- [x] Ca2+ + Ca-ATPase (basic_Ca profile) with parity fixture; ion-set switch in the Ions dialog
 - [x] Per-membrane rendering (membranes checkbox) + channel open-fraction field
 - [ ] Later: fast equivalent-circuit solver; env grid; channel Ca/Cl/HCN families

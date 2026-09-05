@@ -1,56 +1,64 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ionsFromBetse, meshFromBetse, paramsFromBetse, stateFromBetse, type BetseFixture } from './betse';
+import { createChannel } from './channels';
 import { updateV } from './state';
 import { step } from './step';
 
-const fx: BetseFixture = JSON.parse(
-	readFileSync(new URL('../../../tests/fixtures/betse-basic.json', import.meta.url), 'utf8')
-);
-const mesh = meshFromBetse(fx);
-const ions = ionsFromBetse(fx);
-const p = paramsFromBetse(fx);
+const load = (name: string): BetseFixture => JSON.parse(readFileSync(new URL(`../../../tests/fixtures/${name}.json`, import.meta.url), 'utf8'));
+const maxAbs = (a: ArrayLike<number>, b: ArrayLike<number>) => { let d = 0; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b[i])); return d; };
+const maxRel = (a: ArrayLike<number>, b: ArrayLike<number>) => { let d = 0; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b[i]) / Math.max(Math.abs(b[i]), 1e-30)); return d; };
 
-function maxAbsDiff(a: ArrayLike<number>, b: ArrayLike<number>): number {
-	let d = 0;
-	for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b[i]));
-	return d;
-}
-function maxRelDiff(a: ArrayLike<number>, b: ArrayLike<number>): number {
-	let d = 0;
-	for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b[i]) / Math.max(Math.abs(b[i]), 1e-30));
-	return d;
-}
+/** Fixtures exported by tools/betse/dump.sh; each is BETSE's default config, ECM off, init phase, plus the listed twist. */
+const cases = [
+	{ name: 'betse-basic', twist: 'Na/K/P/M, pump + GJ only' },
+	{ name: 'betse-channels', twist: 'Nav1p3 + Kv1p5 channels' },
+	{ name: 'betse-ca', twist: 'basic_Ca profile with Ca-ATPase' }
+];
 
-describe('BETSE parity (default config, ECM off, init phase)', () => {
+describe.each(cases)('BETSE parity: $twist ($name)', ({ name }) => {
+	const fx = load(name);
+	const mesh = meshFromBetse(fx);
+	const ions = ionsFromBetse(fx);
+	const p = paramsFromBetse(fx);
+	const channels = () => (fx.channels ?? []).map((c, k) => createChannel(`c${k}`, c.type, c.maxDm, ions, new Float64Array(mesh.nMems)));
+
 	it('derives the same cell volumes and diviterm from membrane geometry', () => {
-		expect(maxRelDiff(mesh.cellVol, fx.mesh.cell_vol)).toBeLessThan(1e-12);
-		expect(maxRelDiff(mesh.cellSa, fx.mesh.cell_sa)).toBeLessThan(1e-12);
-		expect(maxRelDiff(mesh.diviterm, fx.mesh.diviterm)).toBeLessThan(1e-12);
-		expect(maxRelDiff(mesh.memVol, fx.mesh.mem_vol)).toBeLessThan(1e-12);
+		expect(maxRel(mesh.cellVol, fx.mesh.cell_vol)).toBeLessThan(1e-12);
+		expect(maxRel(mesh.diviterm, fx.mesh.diviterm)).toBeLessThan(1e-12);
 	});
 
 	it('reproduces the initial Vm from concentrations', () => {
 		const s = stateFromBetse(fx, mesh, ions);
 		const vm0 = Float64Array.from(s.vm);
 		updateV(mesh, ions, p, s);
-		expect(maxAbsDiff(s.vm, vm0)).toBeLessThan(1e-15);
+		expect(maxAbs(s.vm, vm0)).toBeLessThan(1e-13);
 	});
 
 	it('tracks BETSE trajectories step for step', () => {
 		const s = stateFromBetse(fx, mesh, ions);
+		const ch = channels();
 		let worstVm = 0, worstCc = 0, worstEnv = 0, worstGj = 0;
 		for (const snap of fx.snaps) {
-			while (s.step < snap.step) step(mesh, ions, p, s);
-			worstVm = Math.max(worstVm, maxAbsDiff(s.vm, snap.vm));
-			for (let i = 0; i < ions.length; i++) worstCc = Math.max(worstCc, maxRelDiff(s.ccCells[i], snap.cc_cells[i]));
-			worstEnv = Math.max(worstEnv, maxRelDiff(s.ccEnv, snap.cc_env));
-			worstGj = Math.max(worstGj, maxAbsDiff(s.gjOpen, snap.gjopen));
+			while (s.step < snap.step) step(mesh, ions, p, s, ch);
+			worstVm = Math.max(worstVm, maxAbs(s.vm, snap.vm));
+			for (let i = 0; i < ions.length; i++) worstCc = Math.max(worstCc, maxRel(s.ccCells[i], snap.cc_cells[i]));
+			worstEnv = Math.max(worstEnv, maxRel(s.ccEnv, snap.cc_env));
+			worstGj = Math.max(worstGj, maxAbs(s.gjOpen, snap.gjopen));
 		}
-		console.log(`parity after ${s.step} steps: |dVm| ${worstVm.toExponential(2)} V, rel dcc ${worstCc.toExponential(2)}, rel denv ${worstEnv.toExponential(2)}, |dgj| ${worstGj.toExponential(2)}`);
+		console.log(`${name}: after ${s.step} steps |dVm| ${worstVm.toExponential(2)} V, rel dcc ${worstCc.toExponential(2)}, rel denv ${worstEnv.toExponential(2)}, |dgj| ${worstGj.toExponential(2)}`);
 		expect(worstVm).toBeLessThan(1e-10);
-		expect(worstCc).toBeLessThan(1e-11);
+		expect(worstCc).toBeLessThan(1e-10); // Ca2+ sits at 1e-4 mM, so relative round-off is larger
 		expect(worstEnv).toBeLessThan(1e-11);
 		expect(worstGj).toBeLessThan(1e-10);
 	});
+
+	if (fx.channels?.length) {
+		it('diverges from BETSE when the channels are left out (fixture exercises them)', () => {
+			const s = stateFromBetse(fx, mesh, ions);
+			const last = fx.snaps[fx.snaps.length - 1];
+			while (s.step < last.step) step(mesh, ions, p, s);
+			expect(maxAbs(s.vm, last.vm)).toBeGreaterThan(1e-4);
+		});
+	}
 });

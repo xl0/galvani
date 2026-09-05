@@ -21,7 +21,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   - `step.ts` — one forward-Euler step, mirroring BETSE's loop order exactly:
     Na/K-ATPase (thermodynamic MM), per ion: GHK membrane flux, Harris
     voltage-gated GJ update (run once per ion, as BETSE does), GHK GJ flux,
-    membrane conc := cell conc; then apply fluxes (cells, well-mixed bath,
+    membrane conc := cell conc; Ca-ATPase flux queued (if a Ca ion exists);
+    channels; then apply fluxes (cells, well-mixed bath,
     then GJ), clamp negatives, updateV. `ccAtMem` lags GJ flux by one step,
     on purpose (BETSE parity). Adds BETSE's 1e-25 nonce to vm in place.
   - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
@@ -37,6 +38,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   network off, init phase: geometry, params, t0 state, 59 snapshots / 500 steps.
   `betse-channels.json` — same with the network on, no substances, Nav1p3 (2e-14)
   + Kv1p5 (1e-15) active during init (`dump.sh <out> --channels`).
+  `betse-ca.json` — `basic_Ca` ion profile with the Ca-ATPase (`--ions basic_Ca`).
+  `parity.test.ts` runs the same checks over all three.
 - `tools/betse/` — `setup.sh` builds `.venv` (uv) from the cached BETSE
   checkout; `dump.sh` regenerates the fixture via `dump_parity.py`, which hooks
   BETSE's `check_v` (called once per step) to snapshot state. BETSE needs a

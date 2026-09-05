@@ -45,7 +45,8 @@ const ParamsSchema = z.object({
 	dt: z.number().positive(), T: z.number(), cm: z.number(), tm: z.number(), volEnv: z.number(),
 	gjSurface: z.number(), gjVthresh: z.number(), gjMin: z.number(), vSensitiveGj: z.boolean(),
 	alphaNaK: z.number(), KmNK_Na: z.number(), KmNK_K: z.number(), KmNK_ATP: z.number(),
-	deltaGATP: z.number(), cATP: z.number(), cADP: z.number(), cPi: z.number()
+	deltaGATP: z.number(), cATP: z.number(), cADP: z.number(), cPi: z.number(),
+	alphaCa: z.number().default(5e-8), KmCa_Ca: z.number().default(1e-3), KmCa_ATP: z.number().default(0.5)
 });
 const GeneratorSchema = z.object({
 	seed: z.number(), worldSize: z.number(), cellRadius: z.number(), cellHeight: z.number(),

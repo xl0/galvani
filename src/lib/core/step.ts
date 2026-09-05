@@ -102,6 +102,27 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		for (let m = 0; m < nMems; m++) cmem[m] = cc[mesh.memToCell[m]];
 	}
 
+	// ---- Ca-ATPase pump (BETSE ca_handler): flux queued like the Na/K pump --
+	const iCa = ions.findIndex((x) => x.name === 'Ca');
+	if (iCa >= 0 && p.alphaCa > 0) {
+		const cmem = s.ccAtMem[iCa];
+		for (let m = 0; m < nMems; m++) if (cmem[m] < 0) cmem[m] = 0;
+		if (s.ccEnv[iCa] < 0) s.ccEnv[iCa] = 0;
+		const cCao = s.ccEnv[iCa];
+		const atpKm = p.cATP / p.KmCa_ATP;
+		const fCa = s.fluxesMem[iCa];
+		for (let m = 0; m < nMems; m++) {
+			const cCai = cmem[m];
+			let Qden = p.cATP * cCai;
+			if (Qden === 0) Qden = 1e-16;
+			const Q = (p.cADP * p.cPi * cCao) / Qden;
+			const Keq = Math.exp(-(p.deltaGATP / RT - (2 * F * s.vm[m]) / RT));
+			const caKm = cCai / p.KmCa_Ca;
+			const frwd = (caKm * atpKm) / ((1 + caKm) * (1 + atpKm));
+			fCa[m] += -p.alphaCa * frwd * (1 - Q / Keq);
+		}
+	}
+
 	// ---- voltage-gated channels (BETSE network run_loop_channels) --------
 	for (const ch of channels) runChannel(ch, mesh, ions, p, s);
 
