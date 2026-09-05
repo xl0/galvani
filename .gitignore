@@ -21,3 +21,5 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .wrangler
+/tools/betse/.venv
+/tools/betse/.home

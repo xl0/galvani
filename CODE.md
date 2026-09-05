@@ -29,16 +29,42 @@ BETSE (see PLAN.md, docs/adr/0001).
     generator invariants.
 - `tests/fixtures/betse-basic.json` — BETSE default config, ECM off, molecule
   network off, init phase: geometry, params, t0 state, 59 snapshots / 500 steps.
-- `tools/betse/dump_parity.py` — regenerates the fixture. Run from the pi-qa
-  venv: `HOME=/home/xl0/pi-qa/.home /home/xl0/pi-qa/.venv/bin/python
-  tools/betse/dump_parity.py tests/fixtures/betse-basic.json`.
-  Hooks BETSE's `check_v` (called once per step) to snapshot state.
+- `tools/betse/` — `setup.sh` builds `.venv` (uv) from the cached BETSE
+  checkout; `dump.sh` regenerates the fixture via `dump_parity.py`, which hooks
+  BETSE's `check_v` (called once per step) to snapshot state. BETSE needs a
+  writable `~/.betse`, so `dump.sh` points HOME at `tools/betse/.home`.
 
+  - `experiment.ts` — zod `ExperimentSchema` (generator, ions, params, endTime,
+    profiles, events) = the URL-serialized document; `applyModulation()` writes
+    per-membrane Dm / pump / GJ factors from profiles + active timed events;
+    `needsReload()` decides live update vs rebuild.
+  - `cut.ts` — `cutCells()`: remove cells, re-index mesh + state, returns cellMap.
+  - `defaults.ts` — BETSE "basic" params/ions.
+- `src/lib/sim/` — `worker.ts` runs the loop off-thread (setTimeout(0) ticks of
+  N steps, snapshots <= 30 Hz with transferable Float32Arrays, per-step probe
+  samples batched into `TraceChunk`); `protocol.ts` message types;
+  `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
+  applies edits (`edit()`), debounces the URL hash; `view.svelte.ts` display
+  state (field, colormap, tool, brush, zoom/pan, range).
+- `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
+  (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
+- `src/lib/components/galvani/` — `Workbench` (3-pane grid, owns session/view),
+  `ConfigPanel` (sections of `NumField`s bound via `session.edit`), `Toolbar`
+  (run/step/reset, field, colormap, tools, speed, theme), `ClusterView`
+  (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout),
+  `TracePanel` (uPlot, series per probe), `Colorbar`.
+- `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
 - `src/lib/components/ui/` — shadcn-svelte components (style "nova", base
   zinc, radius small; `components.json`). Theme tokens live in `src/app.css`.
   Add components with `bunx shadcn-svelte@latest add <name> -y`.
 
 ## Non-obvious
+
+- Cell indices change after a cut: worker and session both remap profiles,
+  probes and traces through `cellMap`. Anything else holding cell ids must too.
+- Theme: `.dark` on `<html>`, set by an inline script in app.html from
+  localStorage / prefers-color-scheme; Toolbar toggles it. Inter font import
+  removed from app.css in favour of the system stack.
 
 - BETSE's `cc_env` in ECM-off mode is a finite bath (`vol_env`), updated as
   the mean of per-membrane deltas; not a fixed clamp.

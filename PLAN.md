@@ -53,8 +53,10 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Core: mesh types + fixture loader; seeded generator (jittered hex -> Voronoi -> clip)
 - [x] Core: state + step (pump, GHK flux, GJ Harris gating, bath update, Vm = Q/C), forward Euler
 - [x] Parity test: 451 steps, |dVm| ~1e-12 V, rel dconc ~1e-14 (tolerances 1e-10 / 1e-11)
-- [ ] shadcn-svelte init, zinc compact theme, light/dark
-- [ ] Worker runner + snapshot protocol; experiment JSON schema (zod) + URL hash persistence
-- [ ] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + uPlot traces
-- [ ] Profiles painting, events (permeability change, cut)
+- [x] shadcn-svelte (zinc, nova), compact 13px base, light/dark toggle
+- [x] Worker + snapshot protocol; zod experiment schema; deflate+base64url URL hash
+- [x] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + uPlot traces
+- [x] Profiles painting, cut brush, timed events (perm / pump / GJ factor, cut)
+- [ ] Polish: membrane-level rendering (per-membrane Vm), fixed-range editing, trace export,
+      experiment presets, keyboard shortcuts; rerun parity after any step.ts change
 - [ ] Phase 2: HH channels, Ca; fast equivalent-circuit solver; env grid
