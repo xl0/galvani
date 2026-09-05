@@ -38,7 +38,7 @@
 		plot?.destroy();
 		const series: uPlot.Series[] = [{ label: 't' }];
 		session.probes.forEach((c) => series.push({ label: `${c}`, stroke: session.probeColors[c] ?? '#888', width: 1.5 }));
-		if (withBath) series.push({ label: 'bath', stroke: css('--muted-foreground'), width: 1, dash: [4, 3] });
+		if (withBath) series.push({ label: 'bath', stroke: css('--muted-foreground'), width: 1, dash: [4, 3], scale: 'bath' });
 		const fg = css('--muted-foreground'), grid = css('--border');
 		const font = '10px ui-monospace, monospace';
 		plot = new uPlot(
@@ -48,9 +48,11 @@
 				cursor: { drag: { x: true, y: false } },
 				axes: [
 					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 22 },
-					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 58 }
+					{ stroke: fg, grid: { stroke: grid }, ticks: { stroke: grid }, font, size: 58 },
+					// the bath gets its own right-hand axis so a 145 mM bath doesn't flatten a 12 mM cell trace
+					...(withBath ? [{ scale: 'bath', side: 1, stroke: fg, grid: { show: false }, ticks: { stroke: grid }, font, size: 52 }] : [])
 				],
-				scales: { x: { time: false } }
+				scales: { x: { time: false }, bath: { auto: true } }
 			},
 			data(),
 			host
