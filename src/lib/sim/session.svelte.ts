@@ -26,6 +26,8 @@ export class SimSession {
 	traceVersion = $state(0);
 	/** shared time base of all traces [s] */
 	traceT: number[] = [];
+	/** bath concentration per ion, aligned to traceT */
+	traceBath: number[][] = [];
 	traces = new Map<number, Trace>();
 	/** colour per probed cell; stable while the probe exists */
 	probeColors = $state<Record<number, string>>({});
@@ -77,12 +79,14 @@ export class SimSession {
 	}
 
 	private appendTrace(s: Snapshot): void {
-		const { probes, t, values } = s.trace;
+		const { probes, t, values, bath } = s.trace;
 		if (t.length === 0) return;
 		const nIons = this.experiment.ions.length;
 		const stride = 1 + nIons;
 		const n0 = this.traceT.length;
 		for (let j = 0; j < t.length; j++) this.traceT.push(t[j]);
+		while (this.traceBath.length < nIons) this.traceBath.push(new Array(n0).fill(null));
+		for (let i = 0; i < nIons; i++) for (let j = 0; j < t.length; j++) this.traceBath[i].push(bath[j * nIons + i]);
 		// probes not in this chunk (just removed / not yet known to the worker) get gaps
 		for (const [c, tr] of this.traces) {
 			if (probes.includes(c)) continue;
@@ -153,6 +157,7 @@ export class SimSession {
 	reset(): void {
 		this.traces = new Map();
 		this.traceT = [];
+		this.traceBath = [];
 		this.traceVersion++;
 		this.error = null;
 		this.post({ type: 'load', experiment: $state.snapshot(this.experiment) });

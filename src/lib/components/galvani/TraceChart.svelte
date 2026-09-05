@@ -2,10 +2,14 @@
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
 	import { getSession } from '$lib/sim/session.svelte';
+	import { getView } from '$lib/sim/view.svelte';
 
 	/** One stacked chart: a series per probe for one quantity ('vm' or an ion name). */
 	let { quantity, label }: { quantity: string; label: string } = $props();
 	const session = getSession();
+	const view = getView();
+	const ionIdx = $derived(session.experiment.ions.findIndex((i) => i.name === quantity));
+	const withBath = $derived(view.traceBath && ionIdx >= 0);
 
 	let host: HTMLDivElement;
 	let wrap: HTMLDivElement;
@@ -17,8 +21,7 @@
 
 	function data(): uPlot.AlignedData {
 		const probes = session.probes;
-		if (probes.length === 0) return [[]];
-		const ionIdx = session.experiment.ions.findIndex((i) => i.name === quantity);
+		if (probes.length === 0 && !withBath) return [[]];
 		const t = session.traceT;
 		const n = t.length;
 		const ys = probes.map((c) => {
@@ -27,6 +30,7 @@
 			const src = quantity === 'vm' ? tr.vm.map((v) => (v === null ? null : v * 1e3)) : tr.cc[ionIdx];
 			return src.length === n ? src : [...src, ...new Array(n - src.length).fill(null)];
 		});
+		if (withBath) ys.push(session.traceBath[ionIdx] ?? new Array(n).fill(null));
 		return [t, ...ys];
 	}
 
@@ -34,6 +38,7 @@
 		plot?.destroy();
 		const series: uPlot.Series[] = [{ label: 't' }];
 		session.probes.forEach((c) => series.push({ label: `${c}`, stroke: session.probeColors[c] ?? '#888', width: 1.5 }));
+		if (withBath) series.push({ label: 'bath', stroke: css('--muted-foreground'), width: 1, dash: [4, 3] });
 		const fg = css('--muted-foreground'), grid = css('--border');
 		const font = '10px ui-monospace, monospace';
 		plot = new uPlot(
@@ -53,7 +58,7 @@
 	}
 
 	$effect(() => {
-		void session.probes; void session.probeColors; void quantity; void width; void height;
+		void session.probes; void session.probeColors; void quantity; void width; void height; void withBath;
 		build();
 		return () => { plot?.destroy(); plot = null; };
 	});

@@ -116,6 +116,15 @@
 		const lut = colormapLut(view.colormap);
 		const [lo, hi] = range;
 		const border = css('--border');
+		// the bath: everything outside the cluster, tinted by the ion's bath concentration
+		const bi = session.experiment.ions.findIndex((x) => x.name === view.field);
+		if (bi >= 0 && session.snap) {
+			const t = Math.min(1, Math.max(0, (session.snap.ccEnv[bi] - lo) / (hi - lo)));
+			ctx.globalAlpha = 0.35;
+			ctx.fillStyle = lut[Math.round(t * 255)];
+			ctx.fillRect(0, 0, width, height);
+			ctx.globalAlpha = 1;
+		}
 		ctx.lineWidth = Math.max(0.5, scale * 2e-7);
 		for (let c = 0; c < g.nCells; c++) {
 			const a = g.vertStart[c], b = g.vertStart[c + 1];
@@ -272,6 +281,11 @@
 		const ions = session.experiment.ions.map((ion, i) => `${ion.name} ${(s.cc[i * g.nCells + c]).toFixed(2)}`).join('  ');
 		return `cell ${c}  Vm ${(s.vmAve[c] * 1e3).toFixed(2)} mV  ${ions}`;
 	});
+	const bathInfo = $derived.by(() => {
+		const s = session.snap;
+		if (!s) return '';
+		return 'bath  ' + session.experiment.ions.map((ion, i) => `${ion.name} ${s.ccEnv[i].toFixed(2)}`).join('  ') + ' mM';
+	});
 </script>
 
 <div bind:this={wrap} class="relative h-full w-full overflow-hidden bg-card">
@@ -285,7 +299,8 @@
 		onwheel={onWheel}
 		oncontextmenu={(e) => e.preventDefault()}
 	></canvas>
-	{#if hoverInfo}
-		<div class="pointer-events-none absolute bottom-1 left-2 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px] text-foreground">{hoverInfo}</div>
-	{/if}
+	<div class="pointer-events-none absolute bottom-1 left-2 flex flex-col gap-0.5 font-mono text-xs">
+		<div class="rounded bg-background/80 px-1.5 py-0.5 text-muted-foreground">{bathInfo}</div>
+		{#if hoverInfo}<div class="rounded bg-background/80 px-1.5 py-0.5 text-foreground">{hoverInfo}</div>{/if}
+	</div>
 </div>

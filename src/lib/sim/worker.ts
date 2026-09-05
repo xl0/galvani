@@ -21,6 +21,7 @@ let channels: ChannelInstance[] = [];
 // trace accumulation between snapshots
 let traceT: number[] = [];
 let traceV: number[] = [];
+let traceB: number[] = [];
 let lastSnapshot = 0;
 let stepsSince = 0;
 let stepsSinceTime = 0;
@@ -47,15 +48,15 @@ function snapshot(): void {
 	const nIons = exp.ions.length;
 	const cc = new Float32Array(nIons * mesh.nCells);
 	for (let i = 0; i < nIons; i++) cc.set(state.ccCells[i], i * mesh.nCells);
-	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV) };
-	traceT = []; traceV = [];
+	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB) };
+	traceT = []; traceV = []; traceB = [];
 	const snap = {
 		t: state.t, step: state.step, running, stepsPerSec,
 		vmAve: Float32Array.from(state.vmAve), vm: Float32Array.from(state.vm), cc,
 		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen),
 		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })), trace
 	};
-	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer, ...snap.channels.map((c) => c.P.buffer)]);
+	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
 }
 
@@ -70,7 +71,7 @@ function load(e: Experiment): void {
 	channels = [];
 	syncChannels();
 	probes = probes.filter((c) => c < mesh.nCells);
-	traceT = []; traceV = [];
+	traceT = []; traceV = []; traceB = [];
 	running = false;
 	geom('load');
 	snapshot();
@@ -135,8 +136,8 @@ function fireEvents(): void {
 }
 
 function sampleTrace(): void {
-	if (probes.length === 0) return;
 	traceT.push(state.t);
+	for (let i = 0; i < exp.ions.length; i++) traceB.push(state.ccEnv[i]);
 	for (const c of probes) {
 		traceV.push(state.vmAve[c]);
 		for (let i = 0; i < exp.ions.length; i++) traceV.push(state.ccCells[i][c]);
@@ -178,7 +179,7 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
 		case 'run': if (!running) { running = true; stepsSince = 0; stepsSinceTime = 0; tick(); } break;
 		case 'pause': running = false; snapshot(); break;
 		case 'step': running = false; for (let i = 0; i < msg.n; i++) if (!doStep()) break; snapshot(); break;
-		case 'probes': probes = msg.cells.filter((c) => c < mesh.nCells); traceT = []; traceV = []; if (!running) snapshot(); break;
+		case 'probes': probes = msg.cells.filter((c) => c < mesh.nCells); traceT = []; traceV = []; traceB = []; if (!running) snapshot(); break;
 		case 'cut': doCut(msg.cells); snapshot(); break;
 		case 'speed': stepsPerTick = Math.max(1, msg.stepsPerTick); break;
 	}

@@ -21,6 +21,7 @@
 				class="rounded border px-1.5 py-0.5 font-mono {view.traceQuantities.includes(q.id) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground'}"
 				onclick={() => toggle(q.id)}>{q.label}</button>
 		{/each}
+		<button class="ml-2 rounded border px-1.5 py-0.5 {view.traceBath ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground'}" onclick={() => (view.traceBath = !view.traceBath)} title="Show the bath concentration as a dashed line on ion traces">bath</button>
 		<span class="ml-auto text-muted-foreground">{session.probes.length ? `${session.probes.length} probe${session.probes.length > 1 ? 's' : ''}` : 'click cells to probe'}</span>
 	</div>
 	<div class="grid min-h-0 flex-1 gap-px" style="grid-template-rows: repeat({Math.max(1, shown.length)}, minmax(0, 1fr))">

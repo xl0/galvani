@@ -19,6 +19,8 @@ export interface TraceChunk {
 	probes: number[];
 	t: Float64Array;
 	values: Float32Array;
+	/** bath concentration per sample per ion (nSamples x nIons) */
+	bath: Float32Array;
 }
 
 export interface Snapshot {

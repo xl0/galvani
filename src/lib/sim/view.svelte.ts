@@ -25,6 +25,8 @@ export class ViewState {
 	range = $state<[number, number]>([0, 1]);
 	/** quantities plotted in the trace panel: 'vm' or ion names */
 	traceQuantities = $state<string[]>(['vm', 'Na', 'K']);
+	/** add a dashed bath series to ion traces */
+	traceBath = $state(true);
 }
 
 const KEY = Symbol('galvani-view');

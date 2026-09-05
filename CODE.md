@@ -59,7 +59,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
   applies edits (`edit()`), debounces the URL hash; traces share one time base
-  (`traceT`) with null gaps for probes added later; probe colours are assigned
+  (`traceT`, sampled every step even without probes) with null gaps for probes
+  added later; bath concentrations are traced alongside (`traceBath`); probe colours are assigned
   on add and kept stable (`probeColors`); `view.svelte.ts` display
   state (field, colormap, tool, brush, zoom/pan, range).
 - `src/lib/presets.ts` — starter experiments (resting, leaky K+ patch, Na+
@@ -71,7 +72,8 @@ BETSE (see PLAN.md, docs/adr/0001).
 - `src/lib/components/galvani/` — `Workbench` (3-pane grid, owns session/view),
   `ConfigPanel` (sections of `NumField`s bound via `session.edit`), `Toolbar`
   (run/step/reset, field, colormap, tools, speed, theme), `ClusterView`
-  (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout),
+  (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout; for
+  ion fields the background is tinted with the bath concentration),
   `TracePanel` (toggleable quantities, one stacked `TraceChart` uPlot per
   quantity, series per probe), `Colorbar`. ConfigPanel is summary cards; each
   physics category opens a `SettingsDialog` (large shadcn Dialog: `BigField`
