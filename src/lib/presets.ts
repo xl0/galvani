@@ -33,7 +33,8 @@ export const presets: Preset[] = [
 			const e = structuredClone(baseExperiment);
 			const W = e.generator.worldSize / 2;
 			e.name = 'Leaky K+ patch';
-			e.profiles = [{ id: 'patch', name: 'K+ leaky patch', color: '#ff7f0e', cells: cellsNear(e, W, W, 18e-6), Dm: { K: 2e-17 }, pumpScale: 1, gjScale: 1 }];
+			e.profiles = [{ id: 'patch', name: 'K+ leaky patch', color: '#ff7f0e', cells: cellsNear(e, W, W, 18e-6) }];
+			e.modifiers = [{ kind: 'perm', ion: 'K', value: 2e-17, profile: 'patch', t: 0, tEnd: null, enabled: true }];
 			return e;
 		}
 	},
@@ -44,7 +45,7 @@ export const presets: Preset[] = [
 		make: () => {
 			const e = structuredClone(baseExperiment);
 			e.name = 'Na+ pulse';
-			e.events = [{ kind: 'perm', t: 20, tEnd: 25, ion: 'Na', profile: '', factor: 50 }];
+			e.modifiers = [{ kind: 'perm', ion: 'Na', factor: 50, profile: '', t: 20, tEnd: 25, enabled: true }];
 			return e;
 		}
 	},
@@ -64,8 +65,8 @@ export const presets: Preset[] = [
 				{ id: 'nav', type: 'Nav1p3', maxDm: 2e-14, profile: '', enabled: true, activators: [], inhibitors: [] },
 				{ id: 'kv', type: 'Kv1p5', maxDm: 1e-15, profile: '', enabled: true, activators: [], inhibitors: [] }
 			];
-			e.profiles = [{ id: 'trigger', name: 'Trigger', color: '#d62728', cells: cellsNear(e, W - 55e-6, W, 16e-6), Dm: {}, pumpScale: 1, gjScale: 1 }];
-			e.events = [{ kind: 'perm', t: 0.1, tEnd: 0.11, ion: 'Na', profile: 'trigger', factor: 200 }];
+			e.profiles = [{ id: 'trigger', name: 'Trigger', color: '#d62728', cells: cellsNear(e, W - 55e-6, W, 16e-6) }];
+			e.modifiers = [{ kind: 'perm', ion: 'Na', factor: 200, profile: 'trigger', t: 0.1, tEnd: 0.11, enabled: true }];
 			return e;
 		}
 	},
@@ -78,7 +79,7 @@ export const presets: Preset[] = [
 			const W = e.generator.worldSize / 2;
 			e.name = 'Morphogen gradient';
 			e.endTime = 120;
-			e.profiles = [{ id: 'source', name: 'Source', color: '#9467bd', cells: cellsNear(e, W - 45e-6, W, 16e-6), Dm: {}, pumpScale: 1, gjScale: 1 }];
+			e.profiles = [{ id: 'source', name: 'Source', color: '#9467bd', cells: cellsNear(e, W - 45e-6, W, 16e-6) }];
 			e.network = {
 				substances: [{
 					name: 'Morph', z: 0, Dm: 0, Do: 1e-10, Dgj: 1e-14, cCell: 0, cEnv: 0, updateIntra: false,
@@ -125,8 +126,8 @@ export const presets: Preset[] = [
 			const e = structuredClone(baseExperiment);
 			const W = e.generator.worldSize / 2;
 			e.name = 'Wound';
-			e.profiles = [{ id: 'wound', name: 'Wound site', color: '#d62728', cells: cellsNear(e, W + 40e-6, W, 22e-6), Dm: {}, pumpScale: 1, gjScale: 1 }];
-			e.events = [{ kind: 'cut', t: 10, profile: 'wound' }];
+			e.profiles = [{ id: 'wound', name: 'Wound site', color: '#d62728', cells: cellsNear(e, W + 40e-6, W, 22e-6) }];
+			e.modifiers = [{ kind: 'cut', profile: 'wound', t: 10, tEnd: null, enabled: true }];
 			return e;
 		}
 	}

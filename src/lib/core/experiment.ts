@@ -5,28 +5,30 @@ import type { SimState } from './state';
 import { basicIons, basicParams } from './defaults';
 import type { NetworkConfig } from './network';
 
-/** Named cell region with membrane-parameter overrides. */
+/** Named set of cells: a target for modifiers, channels and painting. */
 export const ProfileSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	color: z.string(),
-	cells: z.array(z.number().int().nonnegative()),
-	/** replace base membrane permeability per ion name [m2/s] */
-	Dm: z.record(z.string(), z.number().nonnegative()).default({}),
-	/** multipliers on Na/K pump rate and gap-junction conductance */
-	pumpScale: z.number().nonnegative().default(1),
-	gjScale: z.number().nonnegative().default(1)
+	cells: z.array(z.number().int().nonnegative())
 });
 export type Profile = z.infer<typeof ProfileSchema>;
 
-/** Timed interventions on the run timeline. `profile` = '' means all cells. */
-export const EventSchema = z.discriminatedUnion('kind', [
-	z.object({ kind: z.literal('cut'), t: z.number(), profile: z.string() }),
-	z.object({ kind: z.literal('perm'), t: z.number(), tEnd: z.number(), ion: z.string(), profile: z.string(), factor: z.number().nonnegative() }),
-	z.object({ kind: z.literal('pump'), t: z.number(), tEnd: z.number(), profile: z.string(), factor: z.number().nonnegative() }),
-	z.object({ kind: z.literal('gj'), t: z.number(), tEnd: z.number(), profile: z.string(), factor: z.number().nonnegative() })
+/**
+ * A modifier changes membrane properties of a target region (`profile` = '' means all
+ * cells) from `t` until `tEnd` (null = forever). Permanent region properties are just
+ * modifiers with t = 0 and no end; timed interventions are the same thing with a window.
+ * Permeability modifiers either set an absolute value or scale by a factor; pump / GJ
+ * modifiers are multiplicative and stack. A cut removes the region's cells at `t`.
+ */
+const timing = { profile: z.string(), t: z.number().nonnegative().default(0), tEnd: z.number().nullable().default(null), enabled: z.boolean().default(true) };
+export const ModifierSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('perm'), ion: z.string(), value: z.number().nonnegative().optional(), factor: z.number().nonnegative().optional(), ...timing }),
+	z.object({ kind: z.literal('pump'), factor: z.number().nonnegative(), ...timing }),
+	z.object({ kind: z.literal('gj'), factor: z.number().nonnegative(), ...timing }),
+	z.object({ kind: z.literal('cut'), ...timing })
 ]);
-export type SimEvent = z.infer<typeof EventSchema>;
+export type Modifier = z.infer<typeof ModifierSchema>;
 
 /** Hill-type regulator of a rate: a substance or ion name (suffix '!' = independent activator), Km [mM], exponent, pool. */
 export const InfluencerSchema = z.object({ name: z.string(), Km: z.number().positive(), n: z.number(), zone: z.enum(['cell', 'env']).default('cell') });
@@ -108,13 +110,14 @@ export const ExperimentSchema = z.object({
 	/** run end time [s] */
 	endTime: z.number().positive(),
 	profiles: z.array(ProfileSchema),
-	events: z.array(EventSchema),
+	modifiers: z.array(ModifierSchema).default([]),
 	channels: z.array(ChannelSchema).default([]),
 	/** starting membrane voltage [V]; realized by offsetting the balancing anion per cell */
 	initialVm: z.number().default(0),
 	network: NetworkSchema.nullable().default(null)
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
+
 
 /** BETSE's default configuration; presets are derived from it. */
 export const baseExperiment: Experiment = {
@@ -125,7 +128,7 @@ export const baseExperiment: Experiment = {
 	params: basicParams,
 	endTime: 60,
 	profiles: [],
-	events: [],
+	modifiers: [],
 	channels: [],
 	initialVm: 0,
 	network: null
@@ -142,33 +145,43 @@ export function needsReload(a: Experiment, b: Experiment): boolean {
 	);
 }
 
+/** True if any modifier is windowed, so per-membrane factors must be refreshed every step. */
+export function hasTimedModifiers(exp: Experiment): boolean {
+	return exp.modifiers.some((m) => m.enabled && m.kind !== 'cut' && (m.t > 0 || m.tEnd !== null));
+}
+
 /**
- * Write per-membrane permeabilities and pump/GJ block factors from ions,
- * profiles and the events active at time t.
+ * Write per-membrane permeabilities and pump/GJ block factors from ions and the
+ * modifiers active at time t. Permeability: base value, then `value` modifiers set it
+ * (later in the list wins), `factor` modifiers scale it; pump/GJ factors multiply.
  */
 export function applyModulation(mesh: Mesh, exp: Experiment, s: SimState, t: number): void {
 	const cellProfile = new Int32Array(mesh.nCells).fill(-1);
 	exp.profiles.forEach((p, pi) => {
 		for (const c of p.cells) if (c < mesh.nCells) cellProfile[c] = pi;
 	});
-	const active = exp.events.filter((e) => e.kind !== 'cut' && t >= e.t && t < e.tEnd);
-	const matches = (ev: { profile: string }, prof: Profile | null) => ev.profile === '' || (prof !== null && prof.id === ev.profile);
+	const active = exp.modifiers.filter((m) => m.enabled && m.kind !== 'cut' && t >= m.t && (m.tEnd === null || t < m.tEnd));
+	const matches = (mod: { profile: string }, prof: Profile | null) => mod.profile === '' || (prof !== null && prof.id === mod.profile);
+	const nIons = exp.ions.length;
+	const d = new Float64Array(nIons);
 	for (let m = 0; m < mesh.nMems; m++) {
 		const pi = cellProfile[mesh.memToCell[m]];
 		const prof = pi >= 0 ? exp.profiles[pi] : null;
-		let pump = prof?.pumpScale ?? 1;
-		let gj = prof?.gjScale ?? 1;
-		for (const ev of active) {
-			if (ev.kind === 'pump' && matches(ev, prof)) pump *= ev.factor;
-			if (ev.kind === 'gj' && matches(ev, prof)) gj *= ev.factor;
+		let pump = 1, gj = 1;
+		for (let i = 0; i < nIons; i++) d[i] = exp.ions[i].Dm;
+		for (const mod of active) {
+			if (!matches(mod, prof)) continue;
+			if (mod.kind === 'pump') pump *= mod.factor;
+			else if (mod.kind === 'gj') gj *= mod.factor;
+			else if (mod.kind === 'perm') {
+				const i = exp.ions.findIndex((x) => x.name === mod.ion);
+				if (i < 0) continue;
+				if (mod.value !== undefined) d[i] = mod.value;
+				if (mod.factor !== undefined) d[i] *= mod.factor;
+			}
 		}
 		s.nakBlock[m] = pump;
 		s.gjBlock[m] = gj;
-		for (let i = 0; i < exp.ions.length; i++) {
-			const ion = exp.ions[i];
-			let d = prof?.Dm[ion.name] ?? ion.Dm;
-			for (const ev of active) if (ev.kind === 'perm' && ev.ion === ion.name && matches(ev, prof)) d *= ev.factor;
-			s.Dm[i][m] = d;
-		}
+		for (let i = 0; i < nIons; i++) s.Dm[i][m] = d[i];
 	}
 }

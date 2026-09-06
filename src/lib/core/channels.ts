@@ -218,34 +218,36 @@ export function createChannel(id: string, type: string, maxDm: number, ions: Ion
  * with permeability P*maxDm, then update_Co on cells, membranes and bath).
  */
 export function runChannel(ch: ChannelInstance, mesh: Mesh, ions: Ion[], p: Params, s: SimState): void {
-	const { nMems } = mesh;
+	const { nMems, memToCell, memSa, memSaOverVol } = mesh;
 	const model = ch.model;
 	const dtu = p.dt * model.timeUnit;
+	const { m: mg, h: hg, P, mask, modulator, flux } = ch;
+	const vm = s.vm, mPow = model.mPower, hPow = model.hPower, rates = model.rates;
 	for (let k = 0; k < nMems; k++) {
-		const r = model.rates(s.vm[k] * 1e3);
-		ch.m[k] = (r.mTau * ch.m[k] + dtu * r.mInf) / (r.mTau + dtu);
-		ch.h[k] = (r.hTau * ch.h[k] + dtu * r.hInf) / (r.hTau + dtu);
-		ch.P[k] = ch.m[k] ** model.mPower * ch.h[k] ** model.hPower * ch.mask[k];
+		const r = rates(vm[k] * 1e3);
+		mg[k] = (r.mTau * mg[k] + dtu * r.mInf) / (r.mTau + dtu);
+		hg[k] = (r.hTau * hg[k] + dtu * r.hInf) / (r.hTau + dtu);
+		P[k] = mg[k] ** mPow * hg[k] ** hPow * mask[k];
 	}
 	// one GHK flux + update_Co per carried ion, in BETSE's order (primary first)
-	for (const { ionIndex: i, relPerm } of [{ ionIndex: ch.ionIndex, relPerm: 1 }, ...ch.extra]) {
+	const RT = R * p.T, tm = p.tm, dt = p.dt;
+	for (let e = -1; e < ch.extra.length; e++) {
+		const i = e < 0 ? ch.ionIndex : ch.extra[e].ionIndex;
+		const Dmax = (e < 0 ? 1 : ch.extra[e].relPerm) * ch.maxDm;
 		const z = ions[i].z + NONCE;
-		const RT = R * p.T;
 		const cA = s.ccEnv[i];
 		const cc = s.ccCells[i];
-		const flux = ch.flux;
 		for (let k = 0; k < nMems; k++) {
-			s.vm[k] += NONCE;
-			flux[k] = ghkFlux(cA, cc[mesh.memToCell[k]], ch.P[k] * relPerm * ch.maxDm * ch.modulator[k], p.tm, z, s.vm[k], RT);
+			vm[k] += NONCE;
+			flux[k] = ghkFlux(cA, cc[memToCell[k]], P[k] * Dmax * modulator[k], tm, z, vm[k], RT);
 		}
 		let envSum = 0;
 		for (let k = 0; k < nMems; k++) {
-			const c = mesh.memToCell[k];
-			cc[c] += (flux[k] * mesh.memSa[k] * p.dt) / mesh.cellVol[c];
-			envSum += (-flux[k] * mesh.memSa[k]) / p.volEnv;
+			cc[memToCell[k]] += flux[k] * memSaOverVol[k] * dt;
+			envSum -= flux[k] * memSa[k];
 		}
 		const cmem = s.ccAtMem[i];
-		for (let k = 0; k < nMems; k++) cmem[k] = cc[mesh.memToCell[k]];
-		s.ccEnv[i] += (envSum / nMems) * p.dt;
+		for (let k = 0; k < nMems; k++) cmem[k] = cc[memToCell[k]];
+		s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
 	}
 }

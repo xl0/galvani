@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { createChannel, type ChannelInstance } from '$lib/core/channels';
 import { cutCells } from '$lib/core/cut';
-import { applyModulation, type Experiment } from '$lib/core/experiment';
+import { applyModulation, type Experiment, hasTimedModifiers } from '$lib/core/experiment';
 import { generateMesh } from '$lib/core/generator';
 import { Network } from '$lib/core/network';
 import type { Mesh } from '$lib/core/mesh';
@@ -18,7 +18,7 @@ let speed: number | 'max' = 'max';
 let anchor = { wall: 0, t: 0 };
 let probes: number[] = [];
 const firedCuts = new Set<number>();
-let hasTimedEvents = false;
+let hasTimedMods = false;
 let channels: ChannelInstance[] = [];
 let network: Network | null = null;
 
@@ -72,7 +72,7 @@ function load(e: Experiment): void {
 	mesh = generateMesh(e.generator);
 	state = createState(mesh, e.ions, e.initialVm, e.params.cm);
 	firedCuts.clear();
-	hasTimedEvents = e.events.some((ev) => ev.kind !== 'cut');
+	hasTimedMods = hasTimedModifiers(e);
 	applyModulation(mesh, exp, state, 0);
 	buildNetwork(null);
 	updateV(mesh, e.ions, e.params, state);
@@ -133,7 +133,7 @@ function buildNetwork(keep: Network | null, cellMap?: Int32Array): void {
 
 function update(e: Experiment): void {
 	exp = e;
-	hasTimedEvents = e.events.some((ev) => ev.kind !== 'cut');
+	hasTimedMods = hasTimedModifiers(e);
 	applyModulation(mesh, exp, state, state.t);
 	buildNetwork(network);
 	syncChannels();
@@ -160,15 +160,15 @@ function doCut(cells: Iterable<number>): void {
 	geom('cut', r.cellMap);
 }
 
-function fireEvents(): void {
-	exp.events.forEach((ev, i) => {
-		if (ev.kind === 'cut' && !firedCuts.has(i) && state.t >= ev.t) {
+function fireModifiers(): void {
+	exp.modifiers.forEach((ev, i) => {
+		if (ev.kind === 'cut' && ev.enabled && !firedCuts.has(i) && state.t >= ev.t) {
 			firedCuts.add(i);
 			const prof = exp.profiles.find((p) => p.id === ev.profile);
 			if (prof) doCut(prof.cells);
 		}
 	});
-	if (hasTimedEvents) applyModulation(mesh, exp, state, state.t);
+	if (hasTimedMods) applyModulation(mesh, exp, state, state.t);
 }
 
 function sampleTrace(): void {
@@ -182,12 +182,12 @@ function sampleTrace(): void {
 }
 
 function doStep(): boolean {
-	fireEvents();
+	fireModifiers();
 	try {
 		step(mesh, exp.ions, exp.params, state, channels, network);
 	} catch (err) {
 		running = false;
-		post({ type: 'error', message: err instanceof UnstableError ? err.message : String(err) });
+		post({ type: 'error', message: err instanceof UnstableError ? `${err.message}. Reduce the time step.` : String(err) });
 		return false;
 	}
 	sampleTrace();

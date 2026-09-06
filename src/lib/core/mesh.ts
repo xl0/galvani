@@ -29,6 +29,8 @@ export interface Mesh {
 	/** cellVol / cellSa: converts charge density to surface charge (BETSE "diviterm") */
 	diviterm: Float64Array;
 	numMems: Int32Array;
+	/** memSa / cellVol of the owning cell: membrane flux [mol/m2 s] -> cell concentration rate [mol/m3 s] */
+	memSaOverVol: Float64Array;
 	memToCell: Int32Array;
 	/** partner membrane index (self if boundary) */
 	memPartner: Int32Array;
@@ -41,7 +43,7 @@ export interface Mesh {
 }
 
 /** Derive per-cell totals and diviterm from per-membrane arrays. */
-export function finishMesh(m: Omit<Mesh, 'cellSa' | 'cellVol' | 'diviterm' | 'numMems' | 'memVol'>): Mesh {
+export function finishMesh(m: Omit<Mesh, 'cellSa' | 'cellVol' | 'diviterm' | 'numMems' | 'memVol' | 'memSaOverVol'>): Mesh {
 	const { nCells, nMems } = m;
 	const memVol = new Float64Array(nMems);
 	const cellSa = new Float64Array(nCells);
@@ -56,5 +58,7 @@ export function finishMesh(m: Omit<Mesh, 'cellSa' | 'cellVol' | 'diviterm' | 'nu
 	}
 	const diviterm = new Float64Array(nCells);
 	for (let c = 0; c < nCells; c++) diviterm[c] = cellVol[c] / cellSa[c];
-	return { ...m, memVol, cellSa, cellVol, diviterm, numMems };
+	const memSaOverVol = new Float64Array(nMems);
+	for (let i = 0; i < nMems; i++) memSaOverVol[i] = m.memSa[i] / cellVol[m.memToCell[i]];
+	return { ...m, memVol, cellSa, cellVol, diviterm, numMems, memSaOverVol };
 }

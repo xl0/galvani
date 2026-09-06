@@ -21,6 +21,10 @@ const GJ_A2 = 0.14;
 
 export class UnstableError extends Error {}
 
+/** scratch for the Harris gating rates (module-level, sized to the mesh) */
+let gjAlpha = new Float64Array(0);
+let gjBeta = new Float64Array(0);
+
 /** Advance the state by one forward-Euler step of length p.dt. */
 export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: ChannelInstance[] = [], network: Network | null = null): void {
 	const { nMems, nCells } = mesh;
@@ -64,43 +68,51 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 	}
 
 	// ---- electrodiffusion across membranes and gap junctions -------------
+	// Harris gating rates depend only on vgj, which is fixed within a step (the per-ion NONCE drift
+	// cancels in the difference), so compute them once and reuse for each ion's implicit update.
+	if (p.vSensitiveGj) {
+		if (gjAlpha.length !== nMems) { gjAlpha = new Float64Array(nMems); gjBeta = new Float64Array(nMems); }
+		const partner = mesh.memPartner;
+		for (let m = 0; m < nMems; m++) {
+			const V1 = 1e3 * Math.abs(s.vm[partner[m]] - s.vm[m]);
+			gjAlpha[m] = GJ_LAMB * Math.exp(-GJ_A1 * (V1 - p.gjVthresh));
+			const beta = GJ_LAMB * Math.exp(GJ_A2 * (V1 - p.gjVthresh));
+			gjBeta[m] = beta / (1 + 50 * beta);
+		}
+	}
+	const memToCell = mesh.memToCell, partner = mesh.memPartner, boundary = mesh.boundaryMems;
 	for (let i = 0; i < nIons; i++) {
 		const z = ions[i].z + NONCE;
 		const cA = s.ccEnv[i];
 		const cmem = s.ccAtMem[i];
-		const Dm = s.Dm[i];
+		const Dm = s.Dm[i], vm = s.vm, tm = p.tm;
 		const fmem = s.fluxesMem[i];
 		for (let m = 0; m < nMems; m++) {
-			s.vm[m] += NONCE;
-			fmem[m] += ghkFlux(cA, cmem[m], Dm[m], p.tm, z, s.vm[m], RT);
+			vm[m] += NONCE;
+			fmem[m] += ghkFlux(cA, cmem[m], Dm[m], tm, z, vm[m], RT);
 		}
 
 		// gap junctions
-		for (let m = 0; m < nMems; m++) s.vgj[m] = s.vm[mesh.memPartner[m]] - s.vm[m];
+		for (let m = 0; m < nMems; m++) s.vgj[m] = s.vm[partner[m]] - s.vm[m];
 		if (p.vSensitiveGj) {
-			const dtms = dt * 1e3;
+			const dtms = dt * 1e3, gjMin = p.gjMin, gjOpen = s.gjOpen, gjBlock = s.gjBlock, gjMod = s.gjMod;
 			for (let m = 0; m < nMems; m++) {
-				const V1 = 1e3 * Math.abs(s.vgj[m]);
-				const alpha = GJ_LAMB * Math.exp(-GJ_A1 * (V1 - p.gjVthresh));
-				let beta = GJ_LAMB * Math.exp(GJ_A2 * (V1 - p.gjVthresh));
-				beta = beta / (1 + 50 * beta);
-				s.gjOpen[m] = (s.gjOpen[m] + dtms * (alpha + beta * p.gjMin)) / (1 + alpha * dtms + beta * dtms);
-				s.gjOpen[m] *= s.gjBlock[m] * s.gjMod[m];
+				const alpha = gjAlpha[m], beta = gjBeta[m];
+				gjOpen[m] = ((gjOpen[m] + dtms * (alpha + beta * gjMin)) / (1 + alpha * dtms + beta * dtms)) * gjBlock[m] * gjMod[m];
 			}
 		} else {
 			for (let m = 0; m < nMems; m++) s.gjOpen[m] = s.gjBlock[m] * s.gjMod[m] * mesh.gjWeights[m];
 		}
-		const Dgj = s.Dgj[i];
+		const Dgj = s.Dgj[i], gjOpen = s.gjOpen, vgjArr = s.vgj, gjSurface = p.gjSurface, gjLen = mesh.gjLen;
 		const fgj = s.fluxesGj[i];
 		for (let m = 0; m < nMems; m++) {
-			const vgj = s.vgj[m] + NONCE;
-			fgj[m] += ghkFlux(cmem[m], cmem[mesh.memPartner[m]], Dgj[m] * p.gjSurface * s.gjOpen[m], mesh.gjLen, z, vgj, RT);
+			fgj[m] += ghkFlux(cmem[m], cmem[partner[m]], Dgj[m] * gjSurface * gjOpen[m], gjLen, z, vgjArr[m] + NONCE, RT);
 		}
-		for (const m of mesh.boundaryMems) fgj[m] = 0;
+		for (let k = 0; k < boundary.length; k++) fgj[boundary[k]] = 0;
 
 		// concentration at membranes := cell-centre value (BETSE update_intra)
 		const cc = s.ccCells[i];
-		for (let m = 0; m < nMems; m++) cmem[m] = cc[mesh.memToCell[m]];
+		for (let m = 0; m < nMems; m++) cmem[m] = cc[memToCell[m]];
 	}
 
 	// ---- Ca-ATPase pump (BETSE ca_handler): flux queued like the Na/K pump --
@@ -140,29 +152,27 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		const fmem = s.fluxesMem[i];
 		const fgj = s.fluxesGj[i];
 		// membrane fluxes -> cells and bath
+		const saOverVol = mesh.memSaOverVol, memSa = mesh.memSa;
 		let envSum = 0;
 		for (let m = 0; m < nMems; m++) {
-			const c = mesh.memToCell[m];
-			cc[c] += (fmem[m] * mesh.memSa[m] * dt) / mesh.cellVol[c];
-			envSum += (-fmem[m] * mesh.memSa[m]) / p.volEnv;
+			cc[memToCell[m]] += fmem[m] * saOverVol[m] * dt;
+			envSum -= fmem[m] * memSa[m];
 		}
-		s.ccEnv[i] += (envSum / nMems) * dt;
-		for (let m = 0; m < nMems; m++) cmem[m] = cc[mesh.memToCell[m]];
+		s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
+		for (let m = 0; m < nMems; m++) cmem[m] = cc[memToCell[m]];
 		// gap-junction fluxes -> cells only
-		for (let m = 0; m < nMems; m++) {
-			const c = mesh.memToCell[m];
-			cc[c] += (-fgj[m] * mesh.memSa[m] * dt) / mesh.cellVol[c];
-		}
+		for (let m = 0; m < nMems; m++) cc[memToCell[m]] -= fgj[m] * saOverVol[m] * dt;
 		for (let c = 0; c < nCells; c++) {
-			if (Number.isNaN(cc[c])) throw new UnstableError(`NaN concentration of ${ions[i].name} at step ${s.step}`);
-			if (cc[c] < 0) cc[c] = 0;
+			const v = cc[c];
+			if (v !== v) throw new UnstableError(`NaN concentration of ${ions[i].name} at step ${s.step}`);
+			if (v < 0) cc[c] = 0;
 		}
 	}
 
 	updateV(mesh, ions, p, s);
-	for (let m = 0; m < nMems; m++) {
-		if (Number.isNaN(s.vm[m])) throw new UnstableError(`NaN vm at step ${s.step}`);
-	}
+	let vsum = 0;
+	for (let m = 0; m < nMems; m++) vsum += s.vm[m];
+	if (vsum !== vsum) throw new UnstableError(`NaN vm at step ${s.step}`);
 	s.step++;
 	s.t += dt;
 }
@@ -174,7 +184,6 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
  */
 export function ghkFlux(cA: number, cB: number, D: number, d: number, z: number, vBA: number, RT: number): number {
 	const alpha = (z * vBA * F) / RT;
-	const expAlpha = Math.exp(-alpha);
-	const deno = -Math.expm1(-alpha);
-	return -((D * alpha) / d) * ((cB - cA * expAlpha) / deno);
+	const em1 = Math.expm1(-alpha); // exp(-alpha) = 1 + em1; one transcendental instead of two
+	return ((D * alpha) / d) * ((cB - cA * (1 + em1)) / em1);
 }

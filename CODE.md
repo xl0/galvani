@@ -26,6 +26,11 @@ BETSE (see PLAN.md, docs/adr/0001).
     channels; then apply fluxes (cells, well-mixed bath,
     then GJ), clamp negatives, updateV. `ccAtMem` lags GJ flux by one step,
     on purpose (BETSE parity). Adds BETSE's 1e-25 nonce to vm in place.
+    Performance notes (≈0.5 µs per membrane-step at 1.5k cells): Harris
+    gating exponentials computed once per step and reused per ion; GHK uses
+    a single `expm1`; flux scatter uses `mesh.memSaOverVol`; NaN checks are
+    `x !== x` (JavaScriptCore does not inline `Number.isNaN`). Parity holds
+    to 1e-12. Bench: scratchpad `bench.ts` (excitable preset, 200 µm disc).
   - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
     Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak, Cav1.2/1.3,
     Cav2.1–2.3, Cav3.1/3.3, Ca L2/L3/G, Ca leak, Cl leak, HCN1/2/4 and
@@ -62,8 +67,12 @@ BETSE (see PLAN.md, docs/adr/0001).
   writable `~/.betse`, so `dump.sh` points HOME at `tools/betse/.home`.
 
   - `experiment.ts` — zod `ExperimentSchema` (generator, ions, params, endTime,
-    profiles, events) = the URL-serialized document; `applyModulation()` writes
-    per-membrane Dm / pump / GJ factors from profiles + active timed events;
+    profiles = named cell sets, modifiers) = the URL-serialized document.
+    A modifier targets a region (or all cells) from `t` to `tEnd` (null =
+    forever): perm sets a value or scales by a factor (later wins), pump / GJ
+    factors multiply, cut fires once; `enabled` flag. `applyModulation()`
+    writes per-membrane Dm / pump / GJ factors from the modifiers active at t
+    (every step only when some modifier is windowed, `hasTimedModifiers`);
     `needsReload()` decides live update vs rebuild.
   - `cut.ts` — `cutCells()`: remove cells, re-index mesh + state, returns cellMap.
   - `defaults.ts` — BETSE "basic" params/ions. `derived.ts` — Nernst and GHK
@@ -73,15 +82,18 @@ BETSE (see PLAN.md, docs/adr/0001).
   time anchor; snapshots ≤ 30 Hz plus one per endTime/600 of sim time, with
   transferable Float32Arrays; per-step probe samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
-  keeps a snapshot `history` (≤3000; worker records a frame at least every
-  endTime/1000 of sim time) with `playhead` / `seek()` for scrubbing (views
-  read `session.view`, the displayed frame), remaps regions/probes to nearest
-  cells when the cluster is rebuilt,
+  keeps a snapshot `history` (≤3000 frames and ≤256 MB; worker records a
+  frame at least every endTime/1000 of sim time) with `playhead` / `seek()`
+  for scrubbing (views read `session.view`, the displayed frame); a probe
+  added mid-run is backfilled from history (frame resolution, interpolated);
+  remaps regions/probes to nearest cells when the cluster is rebuilt,
   applies edits (`edit()`), debounces the URL hash; traces share one time base
   (`traceT`, sampled every step even without probes) with null gaps for probes
   added later; bath concentrations are traced alongside (`traceBath`); probe colours are assigned
   on add and kept stable (`probeColors`); `view.svelte.ts` display
-  state (field, colormap, tool, brush, zoom/pan, range).
+  state (field, colormap, tool, brush, zoom/pan; colour range per field in
+  `ranges`: mode frame / run / fixed with stored min/max; `persist()` keeps
+  ranges + trace selection in localStorage `galvani:view`).
 - `src/lib/presets.ts` — starter experiments (resting = BETSE default, leaky K+
   patch, Na+ pulse, excitable sheet = the page default, wound); built from
   `baseExperiment`; region cells are picked by generating the mesh on the main
@@ -92,35 +104,51 @@ BETSE (see PLAN.md, docs/adr/0001).
 - `src/lib/export.ts` — trace CSV download, experiment JSON download / file import.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
-- `src/lib/components/galvani/` — `Workbench` (3-pane grid, owns session/view),
+- `src/lib/components/galvani/` — `Workbench` (owns session/view; header row + a horizontal Resizable PaneGroup: settings | canvas+playback+colorbar | traces; side panes collapsible by drag or `[` `]`, layout saved under `autoSaveId`),
   `ConfigPanel` (sections of `NumField`s bound via `session.edit`), `Toolbar`
-  (run/step/reset, field, colormap, tools, speed, theme), `ClusterView`
-  (Canvas2D polygons, hit-test, paint/cut brush, probes, hover readout; for
-  ion fields the background is tinted with the bath concentration),
+  (run/step/reset, field, tools + active-region picker and brush size when
+  painting, speed, theme), `ClusterView` (Canvas2D polygons, hit-test,
+  paint brush: left adds / right or shift erases, cut brush, probes, hover
+  readout, wheel zoom anchored on the pointer, middle/alt drag pans; for ion
+  fields the background is tinted with the bath concentration),
   `TracePanel` (toggleable quantities, one stacked `TraceChart` per quantity:
-  a small Canvas2D line chart with nice ticks, null gaps, pixel decimation,
-  hover readout, click-to-seek, dashed bath series on a right axis when the
-  bath is probed by clicking outside the cluster), `Playback` (frame slider),
-  `Colorbar`. ConfigPanel is summary cards; each
+  a small Canvas2D line chart with nice ticks, null gaps, half-pixel min/max
+  column downsampling (stable as data grows),
+  dashed bath series on the same axis as the probes when the bath is probed
+  by clicking outside the cluster; charts are linked through `view.traceHoverT` /
+  `view.traceRange`: hover or the playhead shows dots + values on every chart,
+  left drag scrubs frames, middle drag pans, wheel zooms time about the
+  pointer, shift+wheel / wheel over the axis zooms values (per chart),
+  double-click resets, y auto-fits the visible window; wheel is attached
+  non-passive by hand because Svelte registers it passive), `Playback`,
+  `Colorbar` (limits for the current range mode; freeze copies them into a
+  fixed range). ClusterView keeps `runExt`, the field's min/max over all
+  recorded frames, rebuilt on field change or reset and folded per live
+  frame. ConfigPanel is summary cards; each
   physics category opens a `SettingsDialog` (large shadcn Dialog: `BigField`
-  form left, model explanation right). Regions/Events stay inline (painting
+  form left, model explanation right). Regions/Modifiers stay inline (painting
   needs the canvas) using compact `NumField`s with tooltips.
   The network is edited as JSON in its dialog (validated by `NetworkSchema`).
   In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
 - `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": eight
   chapters (the eighth describes the step loop and the model's limits) (`chapters/*.svelte`, registry in `index.ts`), each prose + a live
-  demo. `minisim.svelte.ts` runs the real core on the main thread for 1–25
+  demo and a static SVG figure (`figures/Fig*.svelte`; SVG text needs
+  `fill="currentColor"`, arrowheads use `fill="context-stroke"`). Prose is
+  pitched at a rusty biology bachelor: technical terms, reminded on first
+  use. `minisim.svelte.ts` runs the real core on the main thread for 1–25
   cells (timer-driven, speed = sim s per real s, permeability-pulse
   `stimulate()`); `meshes.ts` builds one cell / two cells / a strip; the
-  `components/learn/` set is `Lesson` (two-column layout), `MiniChart`,
+  `components/learn/` set is `Lesson` (two-column layout), `Eq` (KaTeX, display/inline), `MiniChart`,
   `MiniCluster`, `Slider`.
-- `src/lib/components/ui/` — shadcn-svelte components (style "nova", base
-  zinc, radius small; `components.json`). Theme tokens live in `src/app.css`.
-  Add components with `bunx shadcn-svelte@latest add <name> -y`.
-
-## Non-obvious
-
+- `src/lib/components/ui/` — shadcn-svelte components (style "nova", zinc,
+  radius small): button, checkbox, dialog, input, input-group, label,
+  native-select, resizable (PaneForge), select, separator, slider, switch,
+  tabs, textarea, toggle, toggle-group, tooltip, badge, kbd, alert, table,
+  scroll-area, field. Generated code; excluded from formatting via
+  `.prettierignore`. App code defaults to these: NativeSelect for compact
+  selects, Select (popover) in the toolbar, InputGroup for number+unit
+  fields (`NumField`, `BigField`), ToggleGroup for chips, Checkbox + Label.
 - BETSE's initial charge balancing (bal_charge) edits cell concentrations but
   not its membrane copy, so the first step uses stale membrane values.
   Fixtures therefore record `cc_at_mem`; Galvani's own `balanceCharge()`

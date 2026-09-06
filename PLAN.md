@@ -56,7 +56,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] shadcn-svelte (zinc, nova), compact 13px base, light/dark toggle
 - [x] Worker + snapshot protocol; zod experiment schema; deflate+base64url URL hash
 - [x] Workbench UI: config panel, Canvas2D cluster view + toolbar + colorbar, probes + traces
-- [x] Profiles painting, cut brush, timed events (perm / pump / GJ factor, cut)
+- [x] Regions (painted cell sets), cut brush, modifiers (perm value/factor, pump, GJ, cut; optional time window)
 - [x] Usability pass: presets, summary cards + explanatory settings dialogs, Nernst/GHK readouts, stacked traces, 14px base
 - [x] Fixed-range editing (freeze), trace CSV export, experiment JSON import/export, Cav channels
 - [x] Playback slider (frame history), bath probe, shape masks (built-in + SVG/PNG upload), saved-experiment library, excitable default
@@ -71,5 +71,5 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [ ] Network UI beyond JSON (forms per substance); transporters / substance pumps if needed
 - [x] Cl / HCN / cation channel families
 - [ ] ER calcium dynamics (BETSE Ca_dyn) and a calcium-wave preset
-- [ ] Fast equivalent-circuit solver for large clusters
+- [ ] Larger time steps. Tried an implicit voltage predictor (Newton on the linearised cell circuit): 500× on stiff leaks but no help for spikes (gate kinetics set dt), so dropped for simplicity. Revisit only if slow, leaky experiments become a real use case.
 - [ ] Extracellular grid (own formulation; BETSE's is heuristic)
