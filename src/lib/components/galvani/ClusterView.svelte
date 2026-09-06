@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { Snapshot } from '$lib/sim/protocol';
+	import { fieldValues as fieldValuesOf } from '$lib/viz/fields';
+	import { clusterTransform, drawCluster } from '$lib/viz/render';
 	import { fmt } from '$lib/format';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView } from '$lib/sim/view.svelte';
-	import { colormapLut } from '$lib/viz/colormap';
 
 	const session = getSession();
 	const view = getView();
@@ -17,34 +18,7 @@
 	let erasing = false;
 	let panning: { x: number; y: number; px: number; py: number } | null = null;
 
-	/** field values of a snapshot: per cell, or per membrane for fields native to membranes (vm, channel P) */
-	function fieldValues(s: Snapshot, membranes: boolean): Float32Array | null {
-		const g = session.geom;
-		if (!g) return null;
-		const f = view.field;
-		// environment voltage: the grid is the field; cells carry no value (drawn neutral)
-		if (f === 'venv') return membranes ? null : s.env ? Float32Array.from(s.env.v, (v) => v * 1e3) : null;
-		if (membranes) return f === 'vm' ? Float32Array.from(s.vm, (v) => v * 1e3) : f.startsWith('P:') ? (s.channels.find((ch) => ch.id === f.slice(2))?.P ?? null) : f === 'gj' ? s.gjOpen : f === 'pump' ? s.pump : f === 'imem' ? s.iMem : null;
-		const out = new Float32Array(g.nCells);
-		if (f === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
-		else if (f.startsWith('P:') || f === 'gj' || f === 'pump' || f === 'imem') {
-			// membrane-native field: cell value = mean over its membranes
-			const mv = fieldValues(s, true);
-			if (!mv) return null;
-			const n = new Int32Array(g.nCells);
-			for (let m = 0; m < g.nMems; m++) { out[g.memToCell[m]] += mv[m]; n[g.memToCell[m]]++; }
-			for (let c = 0; c < g.nCells; c++) out[c] /= Math.max(1, n[c]);
-		} else if (f.startsWith('S:')) {
-			const sub = s.subs.find((x) => x.name === f.slice(2));
-			if (!sub) return null;
-			out.set(sub.cells);
-		} else {
-			const i = session.experiment.ions.findIndex((x) => x.name === f);
-			if (i < 0) return null;
-			for (let c = 0; c < g.nCells; c++) out[c] = s.cc[i * g.nCells + c];
-		}
-		return out;
-	}
+	const fieldValues = (s: Snapshot, membranes: boolean) => (session.geom ? fieldValuesOf(s, session.geom, session.experiment.ions, view.field, membranes) : null);
 	const values = $derived(session.view ? fieldValues(session.view, false) : null);
 	const memValues = $derived(session.view ? fieldValues(session.view, true) : null);
 	const fieldSource = $derived(view.showMembranes && memValues ? memValues : values);
@@ -79,21 +53,7 @@
 	});
 
 	// world <-> screen
-	function xform() {
-		const g = session.geom!;
-		const [x0, y0, x1, y1] = g.bounds;
-		const bw = x1 - x0, bh = y1 - y0;
-		const scale = (Math.min(width, height) * 0.94 / Math.max(bw, bh)) * view.zoom;
-		const cx = width / 2 + view.panX, cy = height / 2 + view.panY;
-		const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-		return {
-			scale,
-			toX: (x: number) => cx + (x - mx) * scale,
-			toY: (y: number) => cy - (y - my) * scale,
-			fromX: (sx: number) => mx + (sx - cx) / scale,
-			fromY: (sy: number) => my - (sy - cy) / scale
-		};
-	}
+	function xform() { return clusterTransform(session.geom!, width, height, view.zoom, view.panX, view.panY); }
 
 	function cellAt(sx: number, sy: number): number | null {
 		const g = session.geom;
@@ -138,95 +98,9 @@
 		const ctx = canvas.getContext('2d')!;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, width, height);
-		const { toX, toY, scale } = xform();
-		const lut = colormapLut(view.colormap);
-		const [lo, hi] = range;
-		const border = css('--border');
-		// the bath: everything outside the cluster, tinted by the ion's bath concentration
-		const bi = session.experiment.ions.findIndex((x) => x.name === view.field);
-		const bsub = view.field.startsWith('S:') ? session.view?.subs.find((x) => x.name === view.field.slice(2)) : undefined;
-		const env = session.view?.env ?? null;
-		const bathVal = env ? null : bi >= 0 && session.view ? session.view.ccEnv[bi] : bsub ? bsub.env : null;
-		if (env && (bi >= 0 || view.field === 'vm' || view.field === 'venv')) {
-			// extracellular grid as a heatmap on the field's own scale (voltage in mV, ions in mM)
-			const n = env.nx * env.ny, off = bi >= 0 ? bi * n : 0;
-			const px = env.delta * scale + 0.5;
-			ctx.globalAlpha = 0.55;
-			for (let i = 0; i < env.ny; i++) {
-				for (let j = 0; j < env.nx; j++) {
-					const k = i * env.nx + j;
-					const v = bi >= 0 ? env.cc[off + k] : env.v[k] * 1e3;
-					const t = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
-					ctx.fillStyle = lut[Math.round(t * 255)];
-					ctx.fillRect(toX(env.xmin + j * env.delta), toY(env.ymin + (i + 1) * env.delta), px, px);
-				}
-			}
-			ctx.globalAlpha = 1;
-		}
-		if (bathVal !== null) {
-			const t = Math.min(1, Math.max(0, (bathVal - lo) / (hi - lo)));
-			ctx.globalAlpha = 0.35;
-			ctx.fillStyle = lut[Math.round(t * 255)];
-			ctx.fillRect(0, 0, width, height);
-			ctx.globalAlpha = 1;
-		}
-		ctx.lineWidth = Math.max(0.5, scale * 2e-7);
-		const neutralCells = view.field === 'venv';
-		for (let c = 0; c < g.nCells; c++) {
-			const a = g.vertStart[c], b = g.vertStart[c + 1];
-			ctx.beginPath();
-			ctx.moveTo(toX(g.verts[2 * a]), toY(g.verts[2 * a + 1]));
-			for (let i = a + 1; i < b; i++) ctx.lineTo(toX(g.verts[2 * i]), toY(g.verts[2 * i + 1]));
-			ctx.closePath();
-			const v = values ? values[c] : NaN;
-			const t = Number.isFinite(v) ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : 0;
-			ctx.fillStyle = values && !neutralCells ? lut[Math.round(t * 255)] : css('--muted');
-			ctx.fill();
-			ctx.strokeStyle = border;
-			ctx.stroke();
-		}
-		// per-membrane values: colour each polygon edge (membrane m spans verts m -> next in its cell)
-		if (view.showMembranes && memValues) {
-			ctx.lineCap = 'butt';
-			ctx.lineWidth = Math.max(2, scale * 1.2e-6);
-			for (let m = 0; m < g.nMems; m++) {
-				const c = g.memToCell[m];
-				const a = g.vertStart[c], b = g.vertStart[c + 1];
-				const m2 = m + 1 < b ? m + 1 : a;
-				const t = Math.min(1, Math.max(0, (memValues[m] - lo) / (hi - lo)));
-				ctx.strokeStyle = lut[Math.round(t * 255)];
-				ctx.beginPath();
-				ctx.moveTo(toX(g.verts[2 * m]), toY(g.verts[2 * m + 1]));
-				ctx.lineTo(toX(g.verts[2 * m2]), toY(g.verts[2 * m2 + 1]));
-				ctx.stroke();
-			}
-		}
-		// profile outlines
-		for (const p of session.experiment.profiles) {
-			ctx.strokeStyle = p.color;
-			ctx.lineWidth = 1.5;
-			for (const c of p.cells) {
-				if (c >= g.nCells) continue;
-				const a = g.vertStart[c], b = g.vertStart[c + 1];
-				ctx.beginPath();
-				ctx.moveTo(toX(g.verts[2 * a]), toY(g.verts[2 * a + 1]));
-				for (let i = a + 1; i < b; i++) ctx.lineTo(toX(g.verts[2 * i]), toY(g.verts[2 * i + 1]));
-				ctx.closePath();
-				ctx.stroke();
-			}
-		}
-		// scale bar: a round length (1, 2, 5 × 10^k µm) that spans 60–150 px, bottom right
-		{
-			const pxPerM = scale;
-			let L = 10 ** Math.floor(Math.log10(100 / pxPerM));
-			for (const f of [1, 2, 5, 10]) if (L * f * pxPerM >= 60) { L *= f; break; }
-			const px = L * pxPerM, x1 = width - 12, y = height - 14;
-			ctx.strokeStyle = css('--foreground'); ctx.fillStyle = css('--foreground'); ctx.lineWidth = 2;
-			ctx.beginPath(); ctx.moveTo(x1 - px, y); ctx.lineTo(x1, y); ctx.stroke();
-			ctx.beginPath(); ctx.moveTo(x1 - px, y - 4); ctx.lineTo(x1 - px, y + 4); ctx.moveTo(x1, y - 4); ctx.lineTo(x1, y + 4); ctx.stroke();
-			ctx.font = '11px ui-monospace, monospace'; ctx.textAlign = 'right';
-			ctx.fillText(L >= 1e-3 ? `${+(L * 1e3).toPrecision(2)} mm` : `${+(L * 1e6).toPrecision(2)} µm`, x1, y - 6);
-		}
+		const xf = xform(); const { toX, toY } = xf;
+		if (!session.view) return;
+		drawCluster(ctx, g, session.view, session.experiment.ions, session.experiment.profiles, width, height, { colormap: view.colormap, range, field: view.field, showMembranes: view.showMembranes, border: css('--border'), muted: css('--muted'), foreground: css('--foreground') }, xf);
 		// hover
 		if (view.hover !== null && view.hover < g.nCells) {
 			const c = view.hover, a = g.vertStart[c], b = g.vertStart[c + 1];

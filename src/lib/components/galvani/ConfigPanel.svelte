@@ -438,7 +438,7 @@
 		<div class="mt-1 text-sm text-muted-foreground">Named groups of cells. Pick "paint", then left-drag on the canvas to add cells and right-drag to erase. Modifiers and channels target regions.</div>
 		{#each ex.profiles as p, pi (p.id)}
 			<div class="mt-2 flex items-center gap-1.5 rounded-md border px-2 py-1.5 {view.activeProfile === p.id ? 'border-ring' : 'border-border'}">
-				<input type="color" value={p.color} class="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" onchange={(e) => set((x) => (x.profiles[pi].color = (e.target as HTMLInputElement).value))} />
+				<input type="color" value={p.color} class="h-5 w-6 shrink-0 cursor-pointer border-0 bg-transparent p-0" onchange={(e) => set((x) => (x.profiles[pi].color = (e.target as HTMLInputElement).value))} />
 				<Input class="h-6 min-w-20 flex-1 border-0 bg-transparent px-1 font-medium shadow-none dark:bg-transparent" value={p.name} onchange={(e) => set((x) => (x.profiles[pi].name = (e.target as HTMLInputElement).value))} />
 				<Badge variant="secondary" class="font-mono text-[11px]">{p.cells.length} cells</Badge>
 				<Button size="sm" variant={view.activeProfile === p.id && view.tool === 'paint' ? 'default' : 'ghost'} class="h-6 px-1.5 text-xs" title="Paint this region on the canvas: left drag adds cells, right drag erases" onclick={() => { view.activeProfile = p.id; view.tool = 'paint'; }}>paint</Button>

@@ -20,9 +20,12 @@
 	import Download from '@lucide/svelte/icons/download';
 	import Upload from '@lucide/svelte/icons/upload';
 	import FileSpreadsheet from '@lucide/svelte/icons/file-spreadsheet';
+	import Clapperboard from '@lucide/svelte/icons/clapperboard';
+	import VideoDialog from './VideoDialog.svelte';
 	import { exportExperimentJson, exportTracesCsv, importExperimentJson } from '$lib/export';
 
 	const session = getSession();
+	let videoOpen = $state(false);
 	const view = getView();
 
 	const fields = $derived([
@@ -112,6 +115,8 @@
 	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={() => exportExperimentJson($state.snapshot(session.experiment))} title="Download this experiment as JSON"><Download class="size-4" /></Button>
 	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={doImport} title="Load an experiment JSON file"><Upload class="size-4" /></Button>
 	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={() => exportTracesCsv(session)} title="Download probe traces as CSV" disabled={session.probes.length === 0}><FileSpreadsheet class="size-4" /></Button>
+	<Button size="sm" variant="ghost" class="h-8 px-2" onclick={() => (videoOpen = true)} title="Export the recorded run as a video" disabled={session.historyLen < 2}><Clapperboard class="size-4" /></Button>
+	<VideoDialog bind:open={videoOpen} />
 	<div class="flex-1"></div>
 	{#if session.error}<span class="truncate text-destructive" title={session.error}>{session.error}</span>{/if}
 	<span class="font-mono tabular-nums text-muted-foreground" title="Achieved: simulated seconds per real second, and integration steps per second">{session.stepsPerSec && session.running ? `${achieved >= 10 ? achieved.toFixed(0) : achieved.toPrecision(2)}× · ${session.stepsPerSec.toFixed(0)} steps/s` : ''}</span>

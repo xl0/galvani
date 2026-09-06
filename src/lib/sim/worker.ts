@@ -67,7 +67,7 @@ function snapshot(): void {
 		pump: Float32Array.from(state.rateNaK), iMem: Float32Array.from(state.iMem), phase,
 		env: state.ecm ? { nx: state.ecm.grid.nx, ny: state.ecm.grid.ny, xmin: state.ecm.grid.xmin, ymin: state.ecm.grid.ymin, delta: state.ecm.grid.delta, cc: envGrid(), v: Float32Array.from(state.ecm.vEnv) } : null,
 		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })),
-		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnv })) : [], trace
+		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnvGrid ? x.cEnvGrid.reduce((a, b) => a + b, 0) / x.cEnvGrid.length : x.cEnv })) : [], trace
 	};
 	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, snap.pump.buffer, snap.iMem.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
@@ -151,7 +151,7 @@ function buildNetwork(keep: Network | null, cellMap?: Int32Array): void {
 				else cells.set(old.cCells);
 				const mem = new Float64Array(mesh.nMems);
 				for (let m = 0; m < mesh.nMems; m++) mem[m] = cells[mesh.memToCell[m]];
-				net.setConcentrations(sub.cfg.name, cells, mem, old.cEnv);
+				net.setConcentrations(sub.cfg.name, cells, mem, sub.cEnvGrid && old.cEnvGrid && old.cEnvGrid.length === sub.cEnvGrid.length ? old.cEnvGrid : sub.cEnvGrid ? sub.cEnvGrid : old.cEnv);
 			}
 		} else net.balanceCharge();
 		network = net;
