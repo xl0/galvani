@@ -20,6 +20,11 @@ ap.add_argument('--ions', default=None, help="ion profile, e.g. basic_Ca")
 ap.add_argument('--cav', action='store_true', help='add a Cav3p3 channel (needs --channels and --ions basic_Ca)')
 ap.add_argument('--net-variant', default='', help='debug: nogate | nokleak | nomod')
 ap.add_argument('--network', action='store_true', help='enable a small substance/reaction/modulator network (implies --channels off unless given)')
+ap.add_argument('--ecm', action='store_true', help='simulate extracellular spaces (environment grid)')
+ap.add_argument('--grid', type=int, default=25, help='env grid size (with --ecm)')
+ap.add_argument('--tj', type=float, default=1.0, help='tight junction scaling (with --ecm)')
+ap.add_argument('--adh', type=float, default=1.0, help='adherens junction scaling (with --ecm)')
+ap.add_argument('--extvolt', type=float, default=None, help='apply an external voltage [V] top(+)/bottom(-) from 0.3*total to 0.7*total; runs the SIM phase (events only fire there)')
 args = ap.parse_args()
 
 from betse.util.app.meta import appmetaone
@@ -36,7 +41,31 @@ import ruamel.yaml
 yaml = ruamel.yaml.YAML()
 with open(conf) as f:
     doc = yaml.load(f)
-doc['general options']['simulate extracellular spaces'] = False
+doc['general options']['simulate extracellular spaces'] = bool(args.ecm)
+doc['general options']['comp grid size'] = args.grid
+doc['variable settings']['tight junction scaling'] = args.tj
+doc['variable settings']['adherens junction scaling'] = args.adh
+# the default config ships with sim-phase events switched on (a cut, global concentration changes); only ours may fire
+def _off(node):
+    if isinstance(node, dict):
+        if 'event happens' in node: node['event happens'] = False
+        for v in node.values(): _off(v)
+    elif isinstance(node, list):
+        for v in node: _off(v)
+_off(doc)
+if args.extvolt is not None:
+    ev = doc['apply external voltage']
+    ev['event happens'] = True
+    ev['change start'] = 0.3 * args.total
+    ev['change finish'] = 0.7 * args.total
+    ev['change rate'] = 0.05 * args.total
+    ev['peak voltage'] = args.extvolt
+    ev['positive voltage boundary'] = 'top'
+    ev['negative voltage boundary'] = 'bottom'
+    # sim phase settings mirror the init ones so the recorded run is the sim phase
+    doc['sim time settings']['time step'] = args.dt if args.dt is not None else doc['init time settings']['time step']
+    doc['sim time settings']['total time'] = args.total
+    doc['sim time settings']['sampling rate'] = 1.0
 doc['general network']['implement network'] = args.channels or args.network
 if args.channels or args.network:
     net = doc['general network']
@@ -134,9 +163,15 @@ def snap(sim):
     d = {
         'vm': sim.vm.tolist(),
         'cc_cells': np.asarray(sim.cc_cells).tolist(),
-        'cc_env': [float(np.asarray(c).ravel()[0]) for c in sim.cc_env],
+        'cc_env': np.asarray(sim.cc_env).tolist() if args.ecm else [float(np.asarray(c).ravel()[0]) for c in sim.cc_env],
         'gjopen': np.asarray(sim.gjopen * np.ones(sim.mdl)).tolist(),
     }
+    if args.ecm:
+        d['v_env'] = np.asarray(sim.v_env).ravel().tolist()
+        d['E_env_x'] = np.asarray(sim.E_env_x).ravel().tolist()
+        d['E_env_y'] = np.asarray(sim.E_env_y).ravel().tolist()
+        d['Phi_b'] = np.asarray(sim.Phi_b).ravel().tolist() if np.ndim(getattr(sim, 'Phi_b', 0)) else 0.0
+        d['bound_V'] = {k: float(v) for k, v in sim.bound_V.items()}
     if getattr(sim, 'molecules', None) is not None:
         d['subs'] = {name: {'cells': np.asarray(m.c_cells).tolist(), 'mem': np.asarray(m.cc_at_mem).tolist(), 'env': float(np.asarray(m.c_env).ravel()[0])} for name, m in sim.molecules.core.molecules.items()}
         d['nak_block'] = np.asarray(sim.NaKATP_block * np.ones(sim.mdl)).tolist()
@@ -152,7 +187,9 @@ SIM = [None]
 t0 = {}
 orig_loop = simmod.Simulator._run_sim_core_loop
 def loop_hook(self, phase, time_steps, time_steps_sampled, anim_cells):
+    print(f'[dump] core loop: phase={phase.kind} cells={len(self.cc_cells[0])} mems={self.mdl} steps={len(time_steps)}', flush=True)
     SIM[0] = self
+    t0.clear(); snaps.clear(); step[0] = 0
     t0.update(snap(self))
     t0['cc_at_mem'] = np.asarray(self.cc_at_mem).tolist()
     t0['Dm_cells'] = np.asarray(self.Dm_cells).tolist()
@@ -164,6 +201,8 @@ def loop_hook(self, phase, time_steps, time_steps_sampled, anim_cells):
 simmod.Simulator._run_sim_core_loop = loop_hook
 
 phase = runner.init()
+if args.extvolt is not None:
+    phase = runner.sim()
 sim, cells, p = phase.sim, phase.cells, phase.p
 
 ions = [name for name, on in p.ions_dict.items() if on == 1]
@@ -181,6 +220,11 @@ out = {
         'cATP': p.cATP, 'cADP': p.cADP, 'cPi': p.cPi,
         'cluster_open': bool(p.cluster_open),
         'alpha_Ca': p.alpha_Ca, 'KmCa_Ca': p.KmCa_Ca, 'KmCa_ATP': p.KmCa_ATP, 'Ca_dyn': bool(p.Ca_dyn),
+        'is_ecm': bool(p.is_ecm), 'grid_size': int(p.grid_size), 'er': p.er, 'eo': p.eo, 'kb': p.kb, 'q': p.q, 'NAv': p.NAv,
+        'true_cell_size': p.true_cell_size, 'cell_radius': p.cell_radius, 'D_tj': p.D_tj, 'D_adh': p.D_adh,
+        'Dtj_rel': {k: float(v) for k, v in p.Dtj_rel.items()}, 'sharpness': p.sharpness, 'fast_update_ecm': bool(p.fast_update_ecm),
+        'cbnd': {k: float(v) for k, v in (p.cbnd or {}).items()},
+        'ext_volt': None if args.extvolt is None else {'peak': args.extvolt, 'start': 0.3 * args.total, 'finish': 0.7 * args.total, 'rate': 0.05 * args.total, 'pos': 'T', 'neg': 'B'},
     },
     'ions': [{'name': n, 'z': p.ion_charge[n], 'D_free': p.free_diff[n],
               'Dm': p.mem_perms[n], 'c_cell': p.cell_concs[n], 'c_env': p.env_concs[n]}
@@ -202,6 +246,16 @@ out = {
         'cell_nn_i': cells.cell_nn_i.tolist(),
         'bflags_mems': cells.bflags_mems.tolist(),
         'gj_default_weights': cells.gj_default_weights.tolist(),
+    },
+    'ecm': None if not args.ecm else {
+        'shape': list(cells.X.shape), 'delta': float(cells.delta),
+        'xmin': float(cells.xmin), 'xmax': float(cells.xmax), 'ymin': float(cells.ymin), 'ymax': float(cells.ymax),
+        'X': cells.X.ravel().tolist(), 'Y': cells.Y.ravel().tolist(),
+        'map_mem2ecm': cells.map_mem2ecm.tolist(), 'map_cell2ecm': cells.map_cell2ecm.tolist(),
+        'envInds_inClust': cells.envInds_inClust.tolist(), 'memSa_per_envSquare': cells.memSa_per_envSquare.tolist(),
+        'all_bound_mem_inds': np.asarray(cells.all_bound_mem_inds).tolist(), 'interior_bound_mem_inds': np.asarray(cells.interior_bound_mem_inds).tolist(),
+        'ecm_inds_bound_cell': np.asarray(cells.ecm_inds_bound_cell).tolist(),
+        'D_env': np.asarray(sim.D_env).tolist(), 'ko_env': float(sim.ko_env), 'c_env_bound': [float(x) for x in sim.c_env_bound],
     },
     't0': t0,
     'snaps': snaps,

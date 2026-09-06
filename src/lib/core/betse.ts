@@ -3,6 +3,7 @@ import { finishMesh, type Mesh } from './mesh';
 import type { Ion, Params } from './params';
 import type { NetworkConfig } from './network';
 import { createState, type SimState } from './state';
+import { buildEcm, createEcmState, setScreening, type Ecm } from './ecm';
 
 export interface BetseFixture {
 	channels?: { type: string; ion: string; maxDm: number; inhibitors?: { name: string; Km: number; n: number; zone: 'cell' | 'env' }[] }[];
@@ -31,8 +32,11 @@ export interface BetseFixture {
 		cc_cells: number[][];
 		/** BETSE's membrane copy of the concentrations; can differ from cc_cells after its charge balancing */
 		cc_at_mem?: number[][];
-		cc_env: number[];
+		cc_env: number[] | number[][];
 		gjopen: number[];
+		v_env?: number[];
+		E_env_x?: number[];
+		E_env_y?: number[];
 		Dm_cells: number[][];
 		D_gj: number[][];
 		gj_block: number[];
@@ -40,7 +44,9 @@ export interface BetseFixture {
 		n_steps: number;
 		subs?: Record<string, { cells: number[]; mem: number[]; env: number }>;
 	};
-	snaps: { step: number; vm: number[]; cc_cells: number[][]; cc_env: number[]; gjopen: number[]; subs?: Record<string, { cells: number[]; mem: number[]; env: number }>; nak_block?: number[] }[];
+	/** extracellular grid geometry when the fixture was exported with --ecm */
+	ecm?: { shape: number[]; delta: number; xmin: number; xmax: number; ymin: number; ymax: number; map_mem2ecm: number[]; map_cell2ecm: number[]; envInds_inClust: number[]; memSa_per_envSquare: number[]; D_env: number[][]; ko_env: number; c_env_bound: number[] } | null;
+	snaps: { step: number; vm: number[]; cc_cells: number[][]; cc_env: number[] | number[][]; gjopen: number[]; v_env?: number[]; E_env_x?: number[]; E_env_y?: number[]; subs?: Record<string, { cells: number[]; mem: number[]; env: number }>; nak_block?: number[] }[];
 }
 
 export function paramsFromBetse(fx: BetseFixture): Params {
@@ -109,12 +115,25 @@ export function stateFromBetse(fx: BetseFixture, mesh: Mesh, ions: Ion[]): SimSt
 		s.ccCells[i].set(t.cc_cells[i]);
 		if (t.cc_at_mem) s.ccAtMem[i].set(t.cc_at_mem[i]);
 		else for (let m = 0; m < mesh.nMems; m++) s.ccAtMem[i][m] = s.ccCells[i][mesh.memToCell[m]];
-		s.ccEnv[i] = t.cc_env[i];
+		s.ccEnv[i] = Array.isArray(t.cc_env[i]) ? (t.cc_env[i] as number[])[0] : (t.cc_env[i] as number);
 		s.Dm[i].set(t.Dm_cells[i]);
 		s.Dgj[i].set(t.D_gj[i]);
 	}
 	s.gjOpen.set(t.gjopen);
 	s.gjBlock.set(t.gj_block);
 	s.nakBlock.set(t.NaKATP_block);
+	if (fx.ecm) {
+		s.ecm = createEcmState(ecmFromBetse(fx, mesh, ions), ions);
+		for (let i = 0; i < ions.length; i++) s.ecm.cc[i].set(t.cc_env[i] as number[]);
+		setScreening(s.ecm, ions);
+		if (t.v_env) { s.ecm.vEnv.set(t.v_env); s.ecm.eEnvX.set(t.E_env_x!); s.ecm.eEnvY.set(t.E_env_y!); }
+	}
 	return s;
+}
+
+/** Grid built by our own rules from the fixture's world bounds; the fixture's maps must agree (checked in the parity test). */
+export function ecmFromBetse(fx: BetseFixture, mesh: Mesh, ions: Ion[]): Ecm {
+	const e = fx.ecm!, q = fx.params as Record<string, number>;
+	const tjRel = (fx.params as unknown as { Dtj_rel: Record<string, number> }).Dtj_rel ?? {};
+	return buildEcm(mesh, ions, { gridSize: q.grid_size, tjScale: q.D_tj, adhScale: q.D_adh, tjRel }, [e.xmin, e.xmax, e.ymin, e.ymax], q.cell_height, q.cell_radius, q.T, q.true_cell_size);
 }

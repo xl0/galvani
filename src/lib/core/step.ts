@@ -3,6 +3,7 @@ import type { Ion, Params } from './params';
 import { F, R } from './params';
 import type { SimState } from './state';
 import { updateV } from './state';
+import { applyMemFluxToEnv, solvePhiB, updateEnvIon, updateEnvVoltage } from './ecm';
 import { runChannel, type ChannelInstance } from './channels';
 import type { Network } from './network';
 
@@ -40,15 +41,17 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 	// ---- Na/K-ATPase pump ------------------------------------------------
 	const iNa = ions.findIndex((x) => x.name === 'Na');
 	const iK = ions.findIndex((x) => x.name === 'K');
+	const ecm = s.ecm;
+	if (network && ecm) throw new Error('substance networks with extracellular spaces are not supported');
 	if (p.alphaNaK > 0 && iNa >= 0 && iK >= 0) {
-		const cNao = s.ccEnv[iNa];
-		const cKo = s.ccEnv[iK];
-		const kNa3 = (cNao * 1e-3) ** 3;
-		const cKoKm2 = (cKo / p.KmNK_K) ** 2;
 		const atpKm = p.cATP / p.KmNK_ATP;
 		const fNaArr = s.fluxesMem[iNa];
 		const fKArr = s.fluxesMem[iK];
 		for (let m = 0; m < nMems; m++) {
+			const cNao = ecm ? ecm.cc[iNa][ecm.grid.mapMem2Ecm[m]] : s.ccEnv[iNa];
+			const cKo = ecm ? ecm.cc[iK][ecm.grid.mapMem2Ecm[m]] : s.ccEnv[iK];
+			const kNa3 = (cNao * 1e-3) ** 3;
+			const cKoKm2 = (cKo / p.KmNK_K) ** 2;
 			const cNai = s.ccAtMem[iNa][m];
 			const cKi = s.ccAtMem[iK][m];
 			const Vm = s.vm[m];
@@ -88,9 +91,11 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		const cmem = s.ccAtMem[i];
 		const Dm = s.Dm[i], vm = s.vm, tm = p.tm;
 		const fmem = s.fluxesMem[i];
-		for (let m = 0; m < nMems; m++) {
-			vm[m] += NONCE;
-			fmem[m] += ghkFlux(cA, cmem[m], Dm[m], tm, z, vm[m], RT);
+		if (ecm) {
+			const cg = ecm.cc[i], map = ecm.grid.mapMem2Ecm;
+			for (let m = 0; m < nMems; m++) { vm[m] += NONCE; fmem[m] += ghkFlux(cg[map[m]], cmem[m], Dm[m], tm, z, vm[m], RT); }
+		} else {
+			for (let m = 0; m < nMems; m++) { vm[m] += NONCE; fmem[m] += ghkFlux(cA, cmem[m], Dm[m], tm, z, vm[m], RT); }
 		}
 
 		// gap junctions
@@ -110,6 +115,8 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 			fgj[m] += ghkFlux(cmem[m], cmem[partner[m]], Dgj[m] * gjSurface * gjOpen[m], gjLen, z, vgjArr[m] + NONCE, RT);
 		}
 		for (let k = 0; k < boundary.length; k++) fgj[boundary[k]] = 0;
+		// extracellular grid: electrodiffusion with the field from the previous step (BETSE update_ecm)
+		if (ecm) updateEnvIon(ecm, i, ions[i].z, p);
 
 		// concentration at membranes := cell-centre value (BETSE update_intra)
 		const cc = s.ccCells[i];
@@ -122,10 +129,10 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		const cmem = s.ccAtMem[iCa];
 		for (let m = 0; m < nMems; m++) if (cmem[m] < 0) cmem[m] = 0;
 		if (s.ccEnv[iCa] < 0) s.ccEnv[iCa] = 0;
-		const cCao = s.ccEnv[iCa];
 		const atpKm = p.cATP / p.KmCa_ATP;
 		const fCa = s.fluxesMem[iCa];
 		for (let m = 0; m < nMems; m++) {
+			const cCao = ecm ? ecm.cc[iCa][ecm.grid.mapMem2Ecm[m]] : s.ccEnv[iCa];
 			const cCai = cmem[m];
 			let Qden = p.cATP * cCai;
 			if (Qden === 0) Qden = 1e-16;
@@ -160,7 +167,8 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 			envSum -= fmem[m] * memSa[m];
 			iMem[m] += zF * fmem[m];
 		}
-		s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
+		if (ecm) applyMemFluxToEnv(ecm, i, fmem, mesh, dt);
+		else s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
 		for (let m = 0; m < nMems; m++) cmem[m] = cc[memToCell[m]];
 		// gap-junction fluxes -> cells only
 		for (let m = 0; m < nMems; m++) cc[memToCell[m]] -= fgj[m] * saOverVol[m] * dt;
@@ -171,6 +179,7 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		}
 	}
 
+	if (ecm) { solvePhiB(ecm); updateEnvVoltage(ecm, ions, mesh); }
 	updateV(mesh, ions, p, s);
 	let vsum = 0;
 	for (let m = 0; m < nMems; m++) vsum += s.vm[m];

@@ -10,6 +10,7 @@ import type { Ion, Params } from './params';
 import { F, R } from './params';
 import type { SimState } from './state';
 import { ghkFlux, NONCE } from './step';
+import { applyMemFluxToEnv } from './ecm';
 
 export interface Rates { mInf: number; mTau: number; hInf: number; hTau: number }
 
@@ -230,16 +231,18 @@ export function runChannel(ch: ChannelInstance, mesh: Mesh, ions: Ion[], p: Para
 		P[k] = mg[k] ** mPow * hg[k] ** hPow * mask[k];
 	}
 	// one GHK flux + update_Co per carried ion, in BETSE's order (primary first)
-	const RT = R * p.T, tm = p.tm, dt = p.dt;
+	const RT = R * p.T, tm = p.tm, dt = p.dt, ecm = s.ecm;
 	for (let e = -1; e < ch.extra.length; e++) {
 		const i = e < 0 ? ch.ionIndex : ch.extra[e].ionIndex;
 		const Dmax = (e < 0 ? 1 : ch.extra[e].relPerm) * ch.maxDm;
 		const z = ions[i].z + NONCE;
 		const cA = s.ccEnv[i];
 		const cc = s.ccCells[i];
-		for (let k = 0; k < nMems; k++) {
-			vm[k] += NONCE;
-			flux[k] = ghkFlux(cA, cc[memToCell[k]], P[k] * Dmax * modulator[k], tm, z, vm[k], RT);
+		if (ecm) {
+			const cg = ecm.cc[i], map = ecm.grid.mapMem2Ecm;
+			for (let k = 0; k < nMems; k++) { vm[k] += NONCE; flux[k] = ghkFlux(cg[map[k]], cc[memToCell[k]], P[k] * Dmax * modulator[k], tm, z, vm[k], RT); }
+		} else {
+			for (let k = 0; k < nMems; k++) { vm[k] += NONCE; flux[k] = ghkFlux(cA, cc[memToCell[k]], P[k] * Dmax * modulator[k], tm, z, vm[k], RT); }
 		}
 		let envSum = 0;
 		const iMem = s.iMem, zF = ions[i].z * F;
@@ -250,6 +253,7 @@ export function runChannel(ch: ChannelInstance, mesh: Mesh, ions: Ion[], p: Para
 		}
 		const cmem = s.ccAtMem[i];
 		for (let k = 0; k < nMems; k++) cmem[k] = cc[memToCell[k]];
-		s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
+		if (ecm) applyMemFluxToEnv(ecm, i, flux, mesh, dt);
+		else s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
 	}
 }

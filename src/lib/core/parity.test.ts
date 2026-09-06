@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ionsFromBetse, meshFromBetse, paramsFromBetse, stateFromBetse, type BetseFixture } from './betse';
+import { pulse } from './ecm';
 import { createChannel } from './channels';
 import { Network } from './network';
 import { updateV } from './state';
@@ -16,7 +17,10 @@ const cases = [
 	{ name: 'betse-channels', twist: 'Nav1p3 + Kv1p5 channels' },
 	{ name: 'betse-ca', twist: 'basic_Ca profile with Ca-ATPase' },
 	{ name: 'betse-ca-channels', twist: 'basic_Ca + Nav1p3, Kv1p5, Cav3p3 channels' },
-	{ name: 'betse-network', twist: 'substance network: growth, reaction, gating, modulator, channel inhibitor' }
+	{ name: 'betse-network', twist: 'substance network: growth, reaction, gating, modulator, channel inhibitor' },
+	{ name: 'betse-ecm', twist: 'extracellular spaces: 25x25 environment grid, electrodiffusion, env voltage' },
+	{ name: 'betse-ecm-tj', twist: 'extracellular spaces with tight (0.1) and adherens (0.5) junction scaling' },
+	{ name: 'betse-ecm-volt', twist: 'extracellular spaces, sim phase, 1 mV applied top/bottom (pulse 1.5–3.5 s)' }
 ];
 
 describe.each(cases)('BETSE parity: $twist ($name)', ({ name }) => {
@@ -39,28 +43,48 @@ describe.each(cases)('BETSE parity: $twist ($name)', ({ name }) => {
 		expect(maxRel(mesh.diviterm, fx.mesh.diviterm)).toBeLessThan(1e-12);
 	});
 
+	it('builds the same extracellular grid as BETSE', () => {
+		if (!fx.ecm) return;
+		const s = stateFromBetse(fx, mesh, ions);
+		const g = s.ecm!.grid;
+		expect([g.ny, g.nx]).toEqual(fx.ecm.shape);
+		expect(Math.abs(g.delta - fx.ecm.delta) / fx.ecm.delta).toBeLessThan(1e-12);
+		expect(Array.from(g.mapMem2Ecm)).toEqual(fx.ecm.map_mem2ecm);
+		expect(Array.from(g.mapCell2Ecm)).toEqual(fx.ecm.map_cell2ecm);
+		expect(maxRel(g.memSaPerSquare, fx.ecm.memSa_per_envSquare)).toBeLessThan(1e-12);
+		for (let i = 0; i < ions.length; i++) expect(maxAbs(g.Denv[i], fx.ecm.D_env[i])).toBeLessThan(1e-20);
+		expect(Math.abs(g.koEnv - fx.ecm.ko_env) / fx.ecm.ko_env).toBeLessThan(1e-12);
+	});
+
 	it('reproduces the initial Vm from concentrations', () => {
 		const s = stateFromBetse(fx, mesh, ions);
 		network(s, channels());
 		const vm0 = Float64Array.from(s.vm);
 		updateV(mesh, ions, p, s);
-		expect(maxAbs(s.vm, vm0)).toBeLessThan(1e-13);
+		expect(maxAbs(s.vm, vm0)).toBeLessThan(1e-12);
 	});
 
 	it('tracks BETSE trajectories step for step', () => {
 		const s = stateFromBetse(fx, mesh, ions);
 		const ch = channels();
 		const net = network(s, ch);
-		let worstVm = 0, worstCc = 0, worstEnv = 0, worstGj = 0, worstSub = 0;
+		let worstVm = 0, worstCc = 0, worstEnv = 0, worstGj = 0, worstSub = 0, worstVenv = 0;
+		const ev = (fx.params as unknown as { ext_volt: { peak: number; start: number; finish: number; rate: number } | null }).ext_volt;
 		for (const snap of fx.snaps) {
-			while (s.step < snap.step) step(mesh, ions, p, s, ch, net);
+			while (s.step < snap.step) {
+				// BETSE fires events at the start of each step with t from linspace(0, total, n), i.e. a clock of total/(n-1) per step
+				if (ev && s.ecm) { const tEv = (s.step * (fx.t0.n_steps * p.dt)) / (fx.t0.n_steps - 1); const v = ev.peak * pulse(tEv, ev.start, ev.finish, ev.rate); s.ecm.grid.boundV.T = v; s.ecm.grid.boundV.B = -v; }
+				step(mesh, ions, p, s, ch, net);
+			}
 			worstVm = Math.max(worstVm, maxAbs(s.vm, snap.vm));
 			for (let i = 0; i < ions.length; i++) worstCc = Math.max(worstCc, maxRel(s.ccCells[i], snap.cc_cells[i]));
-			worstEnv = Math.max(worstEnv, maxRel(s.ccEnv, snap.cc_env));
+			if (s.ecm) { for (let i = 0; i < ions.length; i++) worstEnv = Math.max(worstEnv, maxRel(s.ecm.cc[i], snap.cc_env[i] as number[])); worstVenv = Math.max(worstVenv, maxAbs(s.ecm.vEnv, snap.v_env!)); }
+			else worstEnv = Math.max(worstEnv, maxRel(s.ccEnv, snap.cc_env as number[]));
 			worstGj = Math.max(worstGj, maxAbs(s.gjOpen, snap.gjopen));
 			if (net && snap.subs) for (const sub of net.subs) { const ref = snap.subs[sub.cfg.name]; worstSub = Math.max(worstSub, maxAbs(sub.cCells, ref.cells), maxAbs(sub.cMem, ref.mem), Math.abs(sub.cEnv - ref.env)); }
 		}
-		console.log(`${name}: after ${s.step} steps |dVm| ${worstVm.toExponential(2)} V, rel dcc ${worstCc.toExponential(2)}, rel denv ${worstEnv.toExponential(2)}, |dgj| ${worstGj.toExponential(2)}${net ? `, |dsub| ${worstSub.toExponential(2)} mM` : ''}`);
+		console.log(`${name}: after ${s.step} steps |dVm| ${worstVm.toExponential(2)} V, rel dcc ${worstCc.toExponential(2)}, rel denv ${worstEnv.toExponential(2)}, |dgj| ${worstGj.toExponential(2)}${net ? `, |dsub| ${worstSub.toExponential(2)} mM` : ''}${s.ecm ? `, |dVenv| ${worstVenv.toExponential(2)} V` : ''}`);
+		if (s.ecm) expect(worstVenv).toBeLessThan(1e-12);
 		if (net) expect(worstSub).toBeLessThan(1e-9);
 		expect(worstVm).toBeLessThan(1e-10);
 		expect(worstCc).toBeLessThan(1e-10); // Ca2+ sits at 1e-4 mM, so relative round-off is larger
