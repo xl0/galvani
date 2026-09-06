@@ -31,6 +31,8 @@ export interface SimState {
 	rateNaK: Float64Array;
 	/** net membrane current density into the cell over the last step, all ions and channels [A/m2] */
 	iMem: Float64Array;
+	/** charge offset per cell from ER calcium exchange (counter-ion compensated), [C/m3] */
+	erRho: Float64Array;
 	/** net charge density per cell [C/m3] */
 	rhoCells: Float64Array;
 	/** transjunctional voltage per membrane */
@@ -67,6 +69,7 @@ export function createState(mesh: Mesh, ions: Ion[], initialVm = 0, cm = 0.05): 
 		fluxesGj: per(nMems),
 		rateNaK: new Float64Array(nMems),
 		iMem: new Float64Array(nMems),
+		erRho: new Float64Array(nCells),
 		rhoCells: new Float64Array(nCells),
 		vgj: new Float64Array(nMems),
 		nakMod: new Float64Array(nMems).fill(1),
@@ -92,6 +95,7 @@ export function createState(mesh: Mesh, ions: Ion[], initialVm = 0, cm = 0.05): 
 export function updateV(mesh: Mesh, ions: Ion[], p: Params, s: SimState): void {
 	const { nCells, nMems } = mesh;
 	s.rhoCells.set(s.extraRho);
+	for (let c = 0; c < nCells; c++) s.rhoCells[c] += s.erRho[c];
 	for (let i = 0; i < ions.length; i++) {
 		const zF = ions[i].z * F;
 		const cc = s.ccCells[i];

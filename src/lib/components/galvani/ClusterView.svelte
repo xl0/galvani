@@ -195,6 +195,18 @@
 				ctx.stroke();
 			}
 		}
+		// scale bar: a round length (1, 2, 5 × 10^k µm) that spans 60–150 px, bottom right
+		{
+			const pxPerM = scale;
+			let L = 10 ** Math.floor(Math.log10(100 / pxPerM));
+			for (const f of [1, 2, 5, 10]) if (L * f * pxPerM >= 60) { L *= f; break; }
+			const px = L * pxPerM, x1 = width - 12, y = height - 14;
+			ctx.strokeStyle = css('--foreground'); ctx.fillStyle = css('--foreground'); ctx.lineWidth = 2;
+			ctx.beginPath(); ctx.moveTo(x1 - px, y); ctx.lineTo(x1, y); ctx.stroke();
+			ctx.beginPath(); ctx.moveTo(x1 - px, y - 4); ctx.lineTo(x1 - px, y + 4); ctx.moveTo(x1, y - 4); ctx.lineTo(x1, y + 4); ctx.stroke();
+			ctx.font = '11px ui-monospace, monospace'; ctx.textAlign = 'right';
+			ctx.fillText(L >= 1e-3 ? `${+(L * 1e3).toPrecision(2)} mm` : `${+(L * 1e6).toPrecision(2)} µm`, x1, y - 6);
+		}
 		// hover
 		if (view.hover !== null && view.hover < g.nCells) {
 			const c = view.hover, a = g.vertStart[c], b = g.vertStart[c + 1];

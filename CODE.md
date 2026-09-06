@@ -31,6 +31,19 @@ BETSE (see PLAN.md, docs/adr/0001).
     a single `expm1`; flux scatter uses `mesh.memSaOverVol`; NaN checks are
     `x !== x` (JavaScriptCore does not inline `Number.isNaN`). Parity holds
     to 1e-12. Bench: scratchpad `bench.ts` (excitable preset, 200 µm disc).
+  - `calcium.ts` — ER calcium store (Galvani's own model; BETSE's is dead
+    code): per cell an ER at `volFraction` of cell volume with the cell's
+    membrane area; SERCA (Hill 2), passive leak, release permeability =
+    fast Hill activation by cytosolic Ca × slow inactivation gate h (τ
+    `inhTau`, Li–Rinzel form) × optional IP3 substance Hill term. Exchange
+    is charge-compensated via `state.erRho` (counter-ions assumed), so it
+    does not move Vm. Defaults tuned for a stable rest (~0.03 µM, store
+    ~0.4 mM), no spontaneous firing, and a regenerative wave (~30 µm/s)
+    when gap-junction Ca coupling is raised; `calcium.test.ts` guards the
+    single-cell behaviour. Runs after the network in `step()`; worker keeps
+    ER state across edits/cuts and exposes it as pseudo-substances `Ca_ER`
+    and `ER_open` (fields, traces, CSV). Config `experiment.calcium` (null
+    = off); "Calcium store" dialog.
   - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
     Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak, Cav1.2/1.3,
     Cav2.1–2.3, Cav3.1/3.3, Ca L2/L3/G, Ca leak, Cl leak, HCN1/2/4 and
@@ -99,7 +112,9 @@ BETSE (see PLAN.md, docs/adr/0001).
   `ranges`: mode frame / run / fixed with stored min/max; `persist()` keeps
   ranges + trace selection in localStorage `galvani:view`).
 - `src/lib/presets.ts` — starter experiments (resting = BETSE default, leaky K+
-  patch, Na+ pulse, excitable sheet = the page default, wound); built from
+  patch, Na+ pulse, excitable sheet = the page default, wound, calcium waves
+  = ER store + 10× gap-junction Ca coupling + 60 s init + a Ca influx pulse
+  on the left edge); built from
   `baseExperiment`; region cells are picked by generating the mesh on the main
   thread. Loading a preset always resets the run.
 - `src/lib/mask.ts` — rasterizes an SVG path (built-in planarian / heart / ring)
@@ -113,7 +128,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   (run/step/reset, field, tools + active-region picker and brush size when
   painting, speed, theme), `ClusterView` (Canvas2D polygons, hit-test,
   paint brush: left adds / right or shift erases, cut brush, probes, hover
-  readout, wheel zoom anchored on the pointer, middle/alt drag pans; for ion
+  readout, scale bar (round length spanning 60–150 px), wheel zoom anchored
+  on the pointer, middle/alt drag pans; for ion
   fields the background is tinted with the bath concentration),
   `TracePanel` (toggleable quantities, one stacked `TraceChart` per quantity:
   a small Canvas2D line chart with nice ticks, null gaps, half-pixel min/max

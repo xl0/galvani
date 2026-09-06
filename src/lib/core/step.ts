@@ -5,6 +5,7 @@ import type { SimState } from './state';
 import { updateV } from './state';
 import { runChannel, type ChannelInstance } from './channels';
 import type { Network } from './network';
+import type { ErCalcium } from './calcium';
 
 /**
  * BETSE parity notes: BETSE adds 1e-25 in place to the voltage array in
@@ -26,7 +27,7 @@ let gjAlpha = new Float64Array(0);
 let gjBeta = new Float64Array(0);
 
 /** Advance the state by one forward-Euler step of length p.dt. */
-export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: ChannelInstance[] = [], network: Network | null = null): void {
+export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: ChannelInstance[] = [], network: Network | null = null, calcium: ErCalcium | null = null): void {
 	const { nMems, nCells } = mesh;
 	const RT = R * p.T;
 	const dt = p.dt;
@@ -145,6 +146,8 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		network.runModulators();
 		network.run(s.t);
 	}
+	// ---- ER calcium store (own model; after the network so IP3 is current) --
+	calcium?.run(s, p, network);
 
 	// ---- apply fluxes to concentrations (BETSE update_all_concs) ---------
 	for (let i = 0; i < nIons; i++) {

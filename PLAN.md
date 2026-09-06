@@ -70,7 +70,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Substance/GRN network engine with parity fixture; JSON network dialog; morphogen + gene-network presets
 - [ ] Network UI beyond JSON (forms per substance); transporters / substance pumps if needed
 - [x] Cl / HCN / cation channel families
-- [ ] ER calcium dynamics and a calcium-wave preset. BETSE's `Ca_dyn` is dead code (hard-coded False with a FIXME; `EndoRetic` references parameters that don't exist), so there is no parity reference: this would be our own model (ER store at 0.1 cell volume, SERCA, Ca/IP3-gated release), validated by behaviour (oscillations, waves) not by fixtures.
+- [x] ER calcium store (own model, BETSE's is dead code) + Calcium waves preset. Open: IP3-driven waves via the network (slower, more realistic), and a learn chapter on calcium.
 - [x] Init phase (`initTime`), bath-concentration modifier, GJ open / pump rate / membrane current display fields
 - [ ] Larger time steps. Tried an implicit voltage predictor (Newton on the linearised cell circuit): 500× on stiff leaks but no help for spikes (gate kinetics set dt), so dropped for simplicity. Revisit only if slow, leaky experiments become a real use case.
 - [ ] Extracellular grid (own formulation; BETSE's is heuristic)
