@@ -1,4 +1,6 @@
 <script lang="ts">
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
+	import { Badge } from '$lib/components/ui/badge';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView } from '$lib/sim/view.svelte';
 	import TraceChart from './TraceChart.svelte';
@@ -8,22 +10,18 @@
 	const quantities = $derived([{ id: 'vm', label: 'Vm', unit: 'mV' }, ...session.experiment.ions.map((i) => ({ id: i.name, label: `[${i.name}]`, unit: 'mM' })), ...session.subNames.map((n) => ({ id: `S:${n}`, label: n, unit: 'mM' }))]);
 	const shown = $derived(quantities.filter((q) => view.traceQuantities.includes(q.id)));
 
-	function toggle(id: string) {
-		view.traceQuantities = view.traceQuantities.includes(id) ? view.traceQuantities.filter((x) => x !== id) : [...view.traceQuantities, id];
-	}
+	const nProbes = $derived(session.probes.length + (session.bathProbe ? 1 : 0));
 </script>
 
 <div class="flex h-full flex-col">
 	<div class="flex h-10 items-center gap-1 border-b border-border px-2 text-sm">
 		<span class="mr-1 font-medium">Traces</span>
-		{#each quantities as q (q.id)}
-			<button
-				class="rounded border px-1.5 py-0.5 font-mono {view.traceQuantities.includes(q.id) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground'}"
-				onclick={() => toggle(q.id)}>{q.label}</button>
-		{/each}
-		<span class="ml-auto text-muted-foreground">{session.probes.length + (session.bathProbe ? 1 : 0) ? `${session.probes.length + (session.bathProbe ? 1 : 0)} probe${session.probes.length + (session.bathProbe ? 1 : 0) > 1 ? 's' : ''}` : 'click cells or the bath to probe'}</span>
+		<ToggleGroup.Root type="multiple" size="sm" variant="outline" spacing={1} bind:value={view.traceQuantities}>
+			{#each quantities as q (q.id)}<ToggleGroup.Item value={q.id} class="h-6 px-1.5 font-mono text-xs">{q.label}</ToggleGroup.Item>{/each}
+		</ToggleGroup.Root>
+		<span class="ml-auto text-muted-foreground">{#if nProbes}<Badge variant="secondary">{nProbes} probe{nProbes > 1 ? 's' : ''}</Badge>{:else}click cells or the bath to probe{/if}</span>
 	</div>
-	<div class="grid min-h-0 flex-1 gap-px" style="grid-template-rows: repeat({Math.max(1, shown.length)}, minmax(0, 1fr))">
+	<div class="grid min-h-0 flex-1 gap-1 bg-muted" style="grid-template-rows: repeat({Math.max(1, shown.length)}, minmax(0, 1fr))">
 		{#each shown as q (q.id)}
 			<TraceChart quantity={q.id} label="{q.label} ({q.unit})" />
 		{/each}

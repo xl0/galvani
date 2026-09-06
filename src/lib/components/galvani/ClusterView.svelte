@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import type { Snapshot } from '$lib/sim/protocol';
+	import { fmt } from '$lib/format';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView } from '$lib/sim/view.svelte';
 	import { colormapLut } from '$lib/viz/colormap';
@@ -11,48 +14,65 @@
 	let width = $state(100);
 	let height = $state(100);
 	let dragging = $state(false);
+	let erasing = false;
 	let panning: { x: number; y: number; px: number; py: number } | null = null;
 
-	/** current field values per cell, in display units */
-	const values = $derived.by(() => {
-		const s = session.view, g = session.geom;
-		if (!s || !g) return null;
+	/** field values of a snapshot: per cell, or per membrane for fields native to membranes (vm, channel P) */
+	function fieldValues(s: Snapshot, membranes: boolean): Float32Array | null {
+		const g = session.geom;
+		if (!g) return null;
+		const f = view.field;
+		if (membranes) return f === 'vm' ? Float32Array.from(s.vm, (v) => v * 1e3) : f.startsWith('P:') ? (s.channels.find((ch) => ch.id === f.slice(2))?.P ?? null) : null;
 		const out = new Float32Array(g.nCells);
-		if (view.field === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
-		else if (view.field.startsWith('P:')) {
+		if (f === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
+		else if (f.startsWith('P:')) {
 			// channel open fraction: cell value = mean over its membranes
-			const mv = memValues;
+			const mv = fieldValues(s, true);
 			if (!mv) return null;
 			const n = new Int32Array(g.nCells);
 			for (let m = 0; m < g.nMems; m++) { out[g.memToCell[m]] += mv[m]; n[g.memToCell[m]]++; }
 			for (let c = 0; c < g.nCells; c++) out[c] /= Math.max(1, n[c]);
-		} else if (view.field.startsWith('S:')) {
-			const sub = s.subs.find((x) => x.name === view.field.slice(2));
+		} else if (f.startsWith('S:')) {
+			const sub = s.subs.find((x) => x.name === f.slice(2));
 			if (!sub) return null;
 			out.set(sub.cells);
 		} else {
-			const i = session.experiment.ions.findIndex((x) => x.name === view.field);
+			const i = session.experiment.ions.findIndex((x) => x.name === f);
 			if (i < 0) return null;
 			for (let c = 0; c < g.nCells; c++) out[c] = s.cc[i * g.nCells + c];
 		}
 		return out;
-	});
+	}
+	const values = $derived(session.view ? fieldValues(session.view, false) : null);
+	const memValues = $derived(session.view ? fieldValues(session.view, true) : null);
+	const fieldSource = $derived(view.showMembranes && memValues ? memValues : values);
 
-	/** per-membrane field values (vm and channel open fractions are native to membranes) */
-	const memValues = $derived.by(() => {
-		const s = session.view, g = session.geom;
-		if (!s || !g) return null;
-		if (view.field === 'vm') return Float32Array.from(s.vm, (v) => v * 1e3);
-		if (view.field.startsWith('P:')) return s.channels.find((ch) => ch.id === view.field.slice(2))?.P ?? null;
-		return null;
+	function extentOf(a: Float32Array | null, lo: number, hi: number): [number, number] {
+		if (a) for (const v of a) { if (v < lo) lo = v; if (v > hi) hi = v; }
+		return [lo, hi];
+	}
+	/** min/max of the field over every recorded frame; rebuilt on field change or reset, folded per live frame */
+	let runExt = $state<[number, number]>([Infinity, -Infinity]);
+	$effect(() => {
+		void view.field; void view.showMembranes; void session.geom;
+		const empty = session.historyLen === 0;
+		let lo = Infinity, hi = -Infinity;
+		if (!empty) for (const f of session.history) [lo, hi] = extentOf(fieldValues(f, view.showMembranes), lo, hi);
+		runExt = [lo, hi];
+	});
+	$effect(() => {
+		const s = session.snap;
+		if (!s) return;
+		const [lo, hi] = extentOf(fieldValues(s, untrack(() => view.showMembranes)), untrack(() => runExt[0]), untrack(() => runExt[1]));
+		if (lo !== runExt[0] || hi !== runExt[1]) runExt = [lo, hi];
 	});
 
 	const range = $derived.by(() => {
-		const src = view.showMembranes && memValues ? memValues : values;
-		if (!src || view.autoRange === false) return [view.min, view.max] as [number, number];
-		let lo = Infinity, hi = -Infinity;
-		for (const v of src) { if (v < lo) lo = v; if (v > hi) hi = v; }
-		if (!(hi > lo)) { hi = lo + 1e-9; }
+		const r = view.rangeSetting;
+		if (r.mode === 'fixed') return [r.min, r.max] as [number, number];
+		let [lo, hi] = r.mode === 'run' ? runExt : extentOf(fieldSource, Infinity, -Infinity);
+		if (!Number.isFinite(lo)) return [r.min, r.max] as [number, number];
+		if (!(hi > lo)) hi = lo + 1e-9;
 		return [lo, hi] as [number, number];
 	});
 
@@ -238,7 +258,8 @@
 		return () => ro.disconnect();
 	});
 
-	function applyTool(sx: number, sy: number, e: PointerEvent) {
+	/** paint: left button adds cells to the active region, right button (or shift) erases them */
+	function applyTool(sx: number, sy: number, erase: boolean) {
 		if (view.tool === 'paint') {
 			const id = view.activeProfile;
 			if (!id) return;
@@ -247,7 +268,7 @@
 			session.edit((ex) => {
 				const p = ex.profiles.find((q) => q.id === id);
 				if (!p) return;
-				if (e.shiftKey) p.cells = p.cells.filter((c) => !cells.includes(c));
+				if (erase) p.cells = p.cells.filter((c) => !cells.includes(c));
 				else {
 					const set = new Set(p.cells);
 					for (const c of cells) set.add(c);
@@ -268,7 +289,7 @@
 			panning = { x: e.clientX, y: e.clientY, px: view.panX, py: view.panY };
 			return;
 		}
-		if (e.button !== 0) return;
+		if (e.button !== 0 && !(e.button === 2 && view.tool === 'paint')) return;
 		canvas.setPointerCapture(e.pointerId);
 		if (view.tool === 'probe') {
 			const c = cellAt(sx, sy);
@@ -276,8 +297,9 @@
 			else session.toggleBathProbe();
 			return;
 		}
+		erasing = e.button === 2 || e.shiftKey;
 		dragging = true;
-		applyTool(sx, sy, e);
+		applyTool(sx, sy, erasing);
 	}
 	function onPointerMove(e: PointerEvent) {
 		const r = canvas.getBoundingClientRect();
@@ -288,25 +310,32 @@
 			return;
 		}
 		view.hover = cellAt(sx, sy);
-		if (dragging && view.tool !== 'probe') applyTool(sx, sy, e);
+		if (dragging && view.tool !== 'probe') applyTool(sx, sy, erasing);
 	}
 	function onPointerUp() { dragging = false; panning = null; }
+	/** zoom about the pointer: keep the world point under the cursor fixed */
 	function onWheel(e: WheelEvent) {
 		e.preventDefault();
-		view.zoom = Math.min(20, Math.max(0.2, view.zoom * Math.exp(-e.deltaY * 0.0015)));
+		const k = Math.min(20, Math.max(0.2, view.zoom * Math.exp(-e.deltaY * 0.0015))) / view.zoom;
+		const r = canvas.getBoundingClientRect();
+		const sx = e.clientX - r.left, sy = e.clientY - r.top;
+		const cx = width / 2 + view.panX, cy = height / 2 + view.panY;
+		view.panX = sx - (sx - cx) * k - width / 2;
+		view.panY = sy - (sy - cy) * k - height / 2;
+		view.zoom *= k;
 	}
 
 	const hoverInfo = $derived.by(() => {
 		const c = view.hover, s = session.view, g = session.geom;
 		if (c === null || !s || !g || c >= g.nCells) return null;
-		const ions = session.experiment.ions.map((ion, i) => `${ion.name} ${(s.cc[i * g.nCells + c]).toFixed(2)}`).join('  ');
+		const ions = session.experiment.ions.map((ion, i) => `${ion.name} ${fmt(s.cc[i * g.nCells + c], 6)}`).join('  ');
 		const subs = s.subs.map((x) => `${x.name} ${x.cells[c].toPrecision(3)}`).join('  ');
 		return `cell ${c}  Vm ${(s.vmAve[c] * 1e3).toFixed(2)} mV  ${ions}${subs ? '  ' + subs : ''}`;
 	});
 	const bathInfo = $derived.by(() => {
 		const s = session.view;
 		if (!s) return '';
-		return 'bath  ' + session.experiment.ions.map((ion, i) => `${ion.name} ${s.ccEnv[i].toFixed(2)}`).join('  ') + ' mM';
+		return 'bath  ' + session.experiment.ions.map((ion, i) => `${ion.name} ${fmt(s.ccEnv[i], 8)}`).join('  ') + ' mM';
 	});
 </script>
 

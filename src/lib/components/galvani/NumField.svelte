@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as InputGroup from '$lib/components/ui/input-group';
 	/** Labeled numeric input. `scale` converts model units to display units (e.g. 1e6 for m -> µm). */
 	let {
 		label,
@@ -8,11 +9,17 @@
 		scale = 1,
 		step = undefined as number | undefined,
 		min = undefined as number | undefined,
-		help = ''
+		help = '',
+		placeholder = '',
+		onclear = undefined as (() => void) | undefined
 	}: {
 		label: string;
-		value: number;
+		/** undefined = unset; shows `placeholder` and calls `onclear` when the field is emptied */
+		value: number | undefined;
 		onchange: (v: number) => void;
+		/** shown when value is undefined (typically the inherited default) */
+		placeholder?: string;
+		onclear?: () => void;
 		unit?: string;
 		scale?: number;
 		step?: number;
@@ -21,24 +28,20 @@
 		help?: string;
 	} = $props();
 
-	let text = $derived(String(+(value * scale).toPrecision(6)));
+	let text = $derived(value === undefined ? '' : String(+(value * scale).toPrecision(6)));
 
 	function commit(e: Event) {
-		const v = parseFloat((e.target as HTMLInputElement).value);
+		const raw = (e.target as HTMLInputElement).value.trim();
+		if (raw === '' && onclear) { onclear(); return; }
+		const v = parseFloat(raw);
 		if (Number.isFinite(v) && v / scale !== value) onchange(v / scale);
 	}
 </script>
 
 <label class="flex min-w-0 items-center gap-1.5 text-sm" title={help}>
-	<span class="w-20 shrink-0 truncate text-muted-foreground {help ? 'cursor-help underline decoration-dotted underline-offset-2' : ''}">{label}</span>
-	<input
-		type="number"
-		class="h-7 w-full min-w-0 rounded border border-input bg-background px-1.5 font-mono text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
-		value={text}
-		{step}
-		{min}
-		onchange={commit}
-		onkeydown={(e) => e.key === 'Enter' && commit(e)}
-	/>
-	<span class="w-9 shrink-0 truncate text-muted-foreground">{unit}</span>
+	{#if label}<span class="w-20 shrink-0 truncate text-muted-foreground {help ? 'cursor-help underline decoration-dotted underline-offset-2' : ''}">{label}</span>{/if}
+	<InputGroup.Root class="h-7 min-w-0 flex-1">
+		<InputGroup.Input type="number" class="h-7 px-1.5 font-mono tabular-nums" value={text} {step} {min} {placeholder} onchange={commit} onkeydown={(e) => e.key === 'Enter' && commit(e)} />
+		{#if unit}<InputGroup.Addon align="inline-end"><InputGroup.Text class="font-normal">{unit}</InputGroup.Text></InputGroup.Addon>{/if}
+	</InputGroup.Root>
 </label>

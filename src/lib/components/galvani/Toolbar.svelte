@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
+	import { Slider } from '$lib/components/ui/slider';
 	import * as Select from '$lib/components/ui/select';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView, type Tool } from '$lib/sim/view.svelte';
-	import { colormapNames } from '$lib/viz/colormap';
+	import * as NativeSelect from '$lib/components/ui/native-select';
 	import { channelModels } from '$lib/core/channels';
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
@@ -30,8 +33,8 @@
 	]);
 	const tools: { id: Tool; icon: typeof Crosshair; title: string }[] = [
 		{ id: 'probe', icon: Crosshair, title: 'Probe: click a cell to trace it' },
-		{ id: 'paint', icon: Brush, title: 'Paint cells into the active profile (shift: erase)' },
-		{ id: 'cut', icon: Scissors, title: 'Cut: remove cells under the brush' }
+		{ id: 'paint', icon: Brush, title: 'Paint region: left drag adds cells, right drag (or shift) erases' },
+		{ id: 'cut', icon: Scissors, title: 'Cut: drag to remove cells from the cluster' }
 	];
 	let dark = $state(false);
 	$effect(() => {
@@ -55,7 +58,7 @@
 	}
 </script>
 
-<div class="flex h-10 items-center gap-1 border-b border-border px-2 text-sm">
+<div class="flex h-10 min-w-0 flex-1 items-center gap-1 px-2 text-sm">
 	{#if session.running}
 		<Button size="sm" variant="secondary" class="h-7 px-2" onclick={() => session.pause()} title="Pause"><Pause class="size-3.5" /></Button>
 	{:else}
@@ -75,26 +78,25 @@
 			{#each fields as f (f.value)}<Select.Item value={f.value} label={f.label} />{/each}
 		</Select.Content>
 	</Select.Root>
-	<Select.Root type="single" bind:value={view.colormap}>
-		<Select.Trigger class="h-8 w-28 text-sm" size="sm">{view.colormap}</Select.Trigger>
-		<Select.Content>
-			{#each colormapNames as c (c)}<Select.Item value={c} label={c} />{/each}
-		</Select.Content>
-	</Select.Root>
-	<label class="ml-1 flex items-center gap-1 text-muted-foreground"><input type="checkbox" bind:checked={view.autoRange} /> auto range</label>
-	<label class="ml-1 flex items-center gap-1 text-muted-foreground" title="Colour each membrane segment by its own value (Vm, channel open fraction) instead of the cell average"><input type="checkbox" bind:checked={view.showMembranes} /> membranes</label>
+	<Label class="ml-1 gap-1.5 font-normal text-muted-foreground" title="Colour each membrane segment by its own value (Vm, channel open fraction) instead of the cell average"><Checkbox bind:checked={view.showMembranes} /> membranes</Label>
 
 	<div class="mx-2 h-5 w-px bg-border"></div>
 
 	{#each tools as t (t.id)}
-		<Button size="sm" variant={view.tool === t.id ? 'default' : 'ghost'} class="h-7 px-2" title={t.title} onclick={() => (view.tool = t.id)}>
+		<Button size="sm" variant={view.tool === t.id ? 'default' : 'ghost'} class="h-7 px-2" title={t.title} onclick={() => { view.tool = t.id; if (t.id === 'paint' && !view.activeProfile) view.activeProfile = session.experiment.profiles[0]?.id ?? null; }}>
 			<t.icon class="size-3.5" />
 		</Button>
 	{/each}
+	{#if view.tool === 'paint'}
+		<NativeSelect.Root size="sm" class="[&>select]:h-7" value={view.activeProfile ?? ''} onchange={(e) => (view.activeProfile = (e.target as HTMLSelectElement).value || null)} title="Region being painted">
+			{#if session.experiment.profiles.length === 0}<NativeSelect.Option value="">no regions yet</NativeSelect.Option>{/if}
+			{#each session.experiment.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
+		</NativeSelect.Root>
+	{/if}
 	{#if view.tool !== 'probe'}
-		<label class="flex items-center gap-1 text-muted-foreground">brush
-			<input type="range" min="0.5" max="6" step="0.5" bind:value={view.brush} class="w-16" />
-		</label>
+		<Label class="gap-1.5 font-normal text-muted-foreground">brush
+			<Slider type="single" min={0.5} max={6} step={0.5} bind:value={view.brush} class="w-20" />
+		</Label>
 	{/if}
 
 	<div class="mx-2 h-5 w-px bg-border"></div>

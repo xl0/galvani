@@ -5,6 +5,13 @@ import { decodeExperiment, encodeExperiment } from '$lib/persist';
 import type { FromWorker, MeshGeom, Snapshot, ToWorker } from './protocol';
 
 /** Per-probe series aligned to SimSession.traceT; null before the probe existed. */
+function snapshotBytes(s: Snapshot): number {
+	let b = s.vmAve.byteLength + s.vm.byteLength + s.cc.byteLength + s.ccEnv.byteLength + s.gjOpen.byteLength;
+	for (const c of s.channels) b += c.P.byteLength;
+	for (const x of s.subs) b += x.cells.byteLength;
+	return b;
+}
+
 export interface Trace {
 	/** cell-average Vm [V] */
 	vm: (number | null)[];
@@ -53,6 +60,9 @@ export class SimSession {
 	speed = $state<number | 'max'>('max');
 
 	static MAX_HISTORY = 3000;
+	/** history is also capped by memory; large clusters get sparser playback instead of growing without bound */
+	static HISTORY_BYTES = 256 * 1024 * 1024;
+	private historyBytes = 0;
 	private worker: Worker | null = null;
 	private hashTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -92,7 +102,8 @@ export class SimSession {
 				this.snap = msg.snapshot;
 				if (this.history.length === 0 || msg.snapshot.step !== this.history[this.history.length - 1].step) {
 					this.history.push(msg.snapshot);
-					if (this.history.length > SimSession.MAX_HISTORY) this.history.splice(0, this.history.length - SimSession.MAX_HISTORY);
+					this.historyBytes += snapshotBytes(msg.snapshot);
+					while (this.history.length > SimSession.MAX_HISTORY || (this.historyBytes > SimSession.HISTORY_BYTES && this.history.length > 1)) this.historyBytes -= snapshotBytes(this.history.shift()!);
 					this.historyLen = this.history.length;
 				}
 				this.running = msg.snapshot.running;
@@ -215,14 +226,14 @@ export class SimSession {
 	}
 	pause(): void { this.post({ type: 'pause' }); }
 	step(n = 1): void { this.post({ type: 'step', n }); }
-	/** Show a recorded frame (pauses the run); null returns to live. */
+	/** Show a recorded frame while the run continues; null returns to live. */
 	seek(index: number | null): void {
-		if (index !== null && this.running) this.pause();
 		this.playhead = index === null ? null : Math.max(0, Math.min(this.history.length - 1, index));
 	}
 
 	reset(): void {
 		this.history = [];
+		this.historyBytes = 0;
 		this.historyLen = 0;
 		this.playhead = null;
 		this.traces = new Map();
@@ -259,9 +270,34 @@ export class SimSession {
 		} else {
 			this.probes = [...this.probes, cell];
 			this.probeColors = { ...this.probeColors, [cell]: this.freeColor() };
+			this.backfill(cell);
 		}
 		this.traceVersion++;
 		this.post({ type: 'probes', cells: $state.snapshot(this.probes) });
+	}
+
+	/** Fill a new probe's trace for times already simulated from the playback history
+	 *  (frame resolution, linearly interpolated between frames; the live trace then continues per step). */
+	private backfill(cell: number): void {
+		const n = this.traceT.length, h = this.history;
+		if (n === 0 || h.length === 0) return;
+		const nIons = this.experiment.ions.length, nSubs = this.subNames.length;
+		const tr: Trace = { vm: new Array(n).fill(null), cc: Array.from({ length: nIons }, () => new Array(n).fill(null)), sub: Array.from({ length: nSubs }, () => new Array(n).fill(null)) };
+		let f = 0;
+		for (let j = 0; j < n; j++) {
+			const t = this.traceT[j];
+			while (f + 1 < h.length && h[f + 1].t <= t) f++;
+			const a = h[f], b = h[f + 1];
+			// frames from before a cut have a different cell count; skip them
+			if (t < a.t || (!b && t > a.t) || cell >= a.vmAve.length || (b && b.vmAve.length !== a.vmAve.length)) continue;
+			const nCells = a.vmAve.length;
+			const w = b && b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
+			const lerp = (x: number, y: number) => x + (y - x) * w;
+			tr.vm[j] = lerp(a.vmAve[cell], b ? b.vmAve[cell] : a.vmAve[cell]);
+			for (let i = 0; i < nIons; i++) tr.cc[i][j] = lerp(a.cc[i * nCells + cell], (b ?? a).cc[i * nCells + cell]);
+			for (let k = 0; k < nSubs; k++) tr.sub[k][j] = lerp(a.subs[k]?.cells[cell] ?? NaN, (b ?? a).subs[k]?.cells[cell] ?? NaN);
+		}
+		this.traces.set(cell, tr);
 	}
 
 	toggleBathProbe(): void {

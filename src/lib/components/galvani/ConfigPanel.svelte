@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView, PROFILE_COLORS } from '$lib/sim/view.svelte';
-	import type { SimEvent } from '$lib/core/experiment';
+	import type { Modifier } from '$lib/core/experiment';
 	import { ghkVoltage, nernst } from '$lib/core/derived';
 	import { presets } from '$lib/presets';
 	import { basicCaIons, basicIons } from '$lib/core/defaults';
@@ -16,6 +16,11 @@
 	import NumField from './NumField.svelte';
 	import SettingsDialog from './SettingsDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as NativeSelect from '$lib/components/ui/native-select';
+	import { Input } from '$lib/components/ui/input';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import { Badge } from '$lib/components/ui/badge';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash from '@lucide/svelte/icons/trash-2';
 
@@ -61,17 +66,17 @@
 	function addProfile() {
 		const n = ex.profiles.length;
 		const id = `p${Date.now().toString(36)}`;
-		set((e) => e.profiles.push({ id, name: `Region ${n + 1}`, color: PROFILE_COLORS[n % PROFILE_COLORS.length], cells: [], Dm: {}, pumpScale: 1, gjScale: 1 }));
+		set((e) => e.profiles.push({ id, name: `Region ${n + 1}`, color: PROFILE_COLORS[n % PROFILE_COLORS.length], cells: [] }));
 		view.activeProfile = id;
 		view.tool = 'paint';
 	}
-	function addEvent(kind: SimEvent['kind']) {
-		const t = Math.ceil(session.view?.t ?? 0);
+	function addModifier(kind: Modifier['kind']) {
 		const profile = ex.profiles[0]?.id ?? '';
+		const base = { profile: kind === 'cut' ? profile : '', t: 0, tEnd: null, enabled: true };
 		set((e) => {
-			if (kind === 'cut') e.events.push({ kind, t: t + 1, profile });
-			else if (kind === 'perm') e.events.push({ kind, t: t + 1, tEnd: t + 6, ion: 'Na', profile: '', factor: 20 });
-			else e.events.push({ kind, t: t + 1, tEnd: t + 6, profile: '', factor: 0 });
+			if (kind === 'cut') e.modifiers.push({ kind, ...base, t: Math.ceil(session.view?.t ?? 0) + 1 });
+			else if (kind === 'perm') e.modifiers.push({ kind, ion: 'Na', factor: 20, ...base });
+			else e.modifiers.push({ kind, factor: 0, ...base });
 		});
 	}
 	const hasCa = $derived(ex.ions.some((i) => i.name === 'Ca'));
@@ -122,23 +127,22 @@
 		if (!n || n.substances.length === 0) return 'none';
 		return `${n.substances.map((s) => s.name).join(', ')}${n.reactions.length ? ` · ${n.reactions.length} reaction${n.reactions.length > 1 ? 's' : ''}` : ''}${n.modulators.length ? ` · ${n.modulators.length} modulator${n.modulators.length > 1 ? 's' : ''}` : ''}`;
 	});
-	const eventLabel: Record<SimEvent['kind'], string> = { perm: 'permeability ×', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells' };
-	const inputCls = 'h-7 w-full min-w-0 rounded-md border border-input bg-background px-1.5 font-mono text-sm tabular-nums';
+	const modLabel: Record<Modifier['kind'], string> = { perm: 'permeability', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells' };
 </script>
 
 <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto">
 	<div class="flex items-center gap-2 border-b border-border px-3 py-2">
-		<select class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm" value="" onchange={(e) => { loadPreset((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ''; }}>
-			<option value="" disabled>Load an experiment…</option>
-			<optgroup label="Presets">
-				{#each presets as p (p.id)}<option value={p.id} title={p.blurb}>{p.name}</option>{/each}
-			</optgroup>
+		<NativeSelect.Root class="min-w-0 flex-1" value="" onchange={(e) => { loadPreset((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ''; }}>
+			<NativeSelect.Option value="" disabled>Load an experiment…</NativeSelect.Option>
+			<NativeSelect.OptGroup label="Presets">
+				{#each presets as p (p.id)}<NativeSelect.Option value={p.id} title={p.blurb}>{p.name}</NativeSelect.Option>{/each}
+			</NativeSelect.OptGroup>
 			{#if library.length}
-				<optgroup label="Saved in this browser">
-					{#each library as e (e.name)}<option value={'lib:' + e.name}>{e.name}</option>{/each}
-				</optgroup>
+				<NativeSelect.OptGroup label="Saved in this browser">
+					{#each library as e (e.name)}<NativeSelect.Option value={'lib:' + e.name}>{e.name}</NativeSelect.Option>{/each}
+				</NativeSelect.OptGroup>
 			{/if}
-		</select>
+		</NativeSelect.Root>
 		<Button size="sm" variant="outline" class="h-8 px-2" onclick={savePreset} title="Save the current experiment in this browser"><Save class="size-4" /></Button>
 		{#if inLibrary}<Button size="sm" variant="ghost" class="h-8 px-2" onclick={deletePreset} title="Remove this saved experiment"><Trash class="size-4" /></Button>{/if}
 	</div>
@@ -153,13 +157,13 @@
 			<div class="grid grid-cols-[10rem_1fr] items-start gap-x-3 gap-y-0.5 py-2">
 				<span class="pt-1.5 text-sm font-medium">Shape</span>
 				<span class="flex flex-wrap items-center gap-2">
-					<select class="h-8 rounded-md border border-input bg-background px-2 text-sm" value={shapeKind} onchange={(e) => { const k = (e.target as HTMLSelectElement).value; if (k !== 'custom') setShape(k); }}>
-						<option value="circle">Disc</option>
-						<option value="ellipse">Ellipse</option>
-						<option value="rect">Rectangle</option>
-						{#each Object.entries(builtinShapes) as [k, s] (k)}<option value={k}>{s.label}</option>{/each}
-						<option value="custom">Custom outline…</option>
-					</select>
+					<NativeSelect.Root value={shapeKind} onchange={(e) => { const k = (e.target as HTMLSelectElement).value; if (k !== 'custom') setShape(k); }}>
+						<NativeSelect.Option value="circle">Disc</NativeSelect.Option>
+						<NativeSelect.Option value="ellipse">Ellipse</NativeSelect.Option>
+						<NativeSelect.Option value="rect">Rectangle</NativeSelect.Option>
+						{#each Object.entries(builtinShapes) as [k, s] (k)}<NativeSelect.Option value={k}>{s.label}</NativeSelect.Option>{/each}
+						<NativeSelect.Option value="custom">Custom outline…</NativeSelect.Option>
+					</NativeSelect.Root>
 					<label class="cursor-pointer rounded-md border border-input px-2 py-1.5 text-sm hover:bg-accent">
 						upload SVG / PNG<input type="file" accept=".svg,.png,image/svg+xml,image/png" class="hidden" onchange={uploadShape} />
 					</label>
@@ -196,12 +200,12 @@
 	</SettingsDialog>
 
 	<SettingsDialog title="Run" blurb="Time stepping and the physical constants that set the scale of the response.">
-		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T, 3)} K{/snippet}
+		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T - 273.15, 3)} °C{/snippet}
 		{#snippet form()}
-			<BigField label="Time step" value={ex.params.dt} unit="s" description="Integration step. Smaller is more accurate and slower. With default permeabilities, steps above ~0.01 s go unstable (Vm explodes, run halts)." onchange={(v) => set((e) => (e.params.dt = v))} />
+			<BigField label="Time step" value={ex.params.dt} unit="s" description="Integration step. Smaller is more accurate and slower. Steps longer than the membrane RC time go unstable (Vm explodes, run halts): ~0.01 s at default permeabilities, ~0.1 ms with strong channels." onchange={(v) => set((e) => (e.params.dt = v))} />
 			<BigField label="End time" value={ex.endTime} unit="s" description="The run pauses when simulated time reaches this. Press Run again to restart from zero." onchange={(v) => set((e) => (e.endTime = v))} />
 			<BigField label="Initial Vm" value={ex.initialVm} scale={1e3} unit="mV" description="Starting membrane voltage. Realized by adding a little balancing anion inside each cell so the charge-capacitor relation gives this Vm at t = 0. Saves waiting a minute for the pump to polarize the cluster." onchange={(v) => set((e) => (e.initialVm = v))} />
-			<BigField label="Temperature" value={ex.params.T} unit="K" description="Sets the thermal voltage RT/F (about 26.7 mV at 310 K) that appears in every flux and Nernst equation." onchange={(v) => set((e) => (e.params.T = v))} />
+			<BigField label="Temperature" value={ex.params.T - 273.15} unit="°C" description="Sets the thermal voltage RT/F (about 26.7 mV at 37 °C) that appears in every flux and Nernst equation." onchange={(v) => set((e) => (e.params.T = v + 273.15))} />
 			<BigField label="Membrane capacitance" value={ex.params.cm} unit="F/m²" description="Charge per area per volt. Vm = surface charge / capacitance, so lower values make Vm swing further for the same ion movement. Real membranes are ~0.01 F/m²; BETSE uses 0.05." onchange={(v) => set((e) => (e.params.cm = v))} />
 			<BigField label="Bath volume" value={ex.params.volEnv} scale={1e6} unit="mL" description="The extracellular medium is one well-mixed compartment of this volume (BETSE default 2.25e-7 mL, i.e. a thin film over the cluster). Make it small to see bath concentrations drift as cells pump; large to hold them fixed." onchange={(v) => set((e) => (e.params.volEnv = v))} />
 		{/snippet}
@@ -229,9 +233,9 @@
 			{#each ex.ions as ion, i (ion.name)}
 				<div class="grid grid-cols-[3rem_1fr_1fr_1.3fr_4rem] items-center gap-2 py-1">
 					<span class="font-mono text-sm">{ion.name}<sup>{ion.z > 0 ? '+' : '−'}</sup></span>
-					<input type="number" class={inputCls} value={ion.cCell} onchange={(e) => set((x) => (x.ions[i].cCell = +(e.target as HTMLInputElement).value))} />
-					<input type="number" class={inputCls} value={ion.cEnv} onchange={(e) => set((x) => (x.ions[i].cEnv = +(e.target as HTMLInputElement).value))} />
-					<input type="number" class={inputCls} value={ion.Dm} onchange={(e) => set((x) => (x.ions[i].Dm = +(e.target as HTMLInputElement).value))} />
+					<Input type="number" class="h-7 font-mono tabular-nums" value={ion.cCell} onchange={(e) => set((x) => (x.ions[i].cCell = +(e.target as HTMLInputElement).value))} />
+					<Input type="number" class="h-7 font-mono tabular-nums" value={ion.cEnv} onchange={(e) => set((x) => (x.ions[i].cEnv = +(e.target as HTMLInputElement).value))} />
+					<Input type="number" class="h-7 font-mono tabular-nums" value={ion.Dm} onchange={(e) => set((x) => (x.ions[i].Dm = +(e.target as HTMLInputElement).value))} />
 					<span class="font-mono text-sm tabular-nums text-muted-foreground">{fmt(nernstMv[i], 3)}</span>
 				</div>
 			{/each}
@@ -263,7 +267,7 @@
 			<h4>Things to try</h4>
 			<ul>
 				<li>Set K⁺ permeability to 1e-17: cells rest much more negative.</li>
-				<li>Raise Na⁺ permeability during a run (Events → permeability): a depolarizing pulse.</li>
+				<li>Raise Na⁺ permeability during a run (Modifiers → permeability with a time window): a depolarizing pulse.</li>
 				<li>Shrink the bath volume: watch K⁺ accumulate outside and E<sub>N</sub> collapse.</li>
 			</ul>
 		{/snippet}
@@ -304,7 +308,7 @@
 		{#snippet form()}
 			<BigField label="Area fraction" value={ex.params.gjSurface} description="Fraction of each membrane segment that is gap-junction channel. Coupling strength scales linearly. 0 isolates every cell; 1e-6 couples them strongly." onchange={(v) => set((e) => (e.params.gjSurface = v))} />
 			<label class="flex items-start gap-3 py-2">
-				<input type="checkbox" class="mt-1" checked={ex.params.vSensitiveGj} onchange={(e) => set((x) => (x.params.vSensitiveGj = (e.target as HTMLInputElement).checked))} />
+				<Checkbox class="mt-1" checked={ex.params.vSensitiveGj} onCheckedChange={(v) => set((x) => (x.params.vSensitiveGj = v === true))} />
 				<span><span class="text-sm font-medium">Voltage gated</span><br /><span class="text-sm text-muted-foreground">Junctions close when the voltage difference between the two cells is large (Harris et al. 1983, axolotl embryo). Off = always open.</span></span>
 			</label>
 			<BigField label="Threshold" value={ex.params.gjVthresh} unit="mV" description="Transjunctional voltage where closing starts." onchange={(v) => set((e) => (e.params.gjVthresh = v))} />
@@ -315,8 +319,8 @@
 			<p>Each membrane segment that faces another cell exchanges ions with its partner segment by the same GHK electrodiffusion used at the outer membrane, but with the ion's free diffusion constant, over the cell-gap distance, through the fraction of area that is junction. Voltage differences between cells drive current through them, so a polarized region pulls its neighbours along.</p>
 			<h4>Gating</h4>
 			<p>With gating on, each junction has an open fraction that relaxes toward a voltage-dependent steady state: near-fully open below the threshold, closing exponentially above it. This is how tissues electrically isolate a strongly depolarized (for example injured) region.</p>
-			<h4>Regions and events</h4>
-			<p>The "junctions ×" multiplier on a region scales coupling for its cells; a GJ event does the same for a time window. Set it to 0 to see an isolated patch keep its own voltage.</p>
+			<h4>Regions and modifiers</h4>
+			<p>A gap-junction modifier scales coupling for a region's cells, permanently or for a time window. Set it to 0 to see an isolated patch keep its own voltage.</p>
 		{/snippet}
 	</SettingsDialog>
 
@@ -330,14 +334,14 @@
 			{#each ex.channels as ch, ci (ch.id)}
 				<div class="mb-3 rounded-md border border-border p-3">
 					<div class="flex items-center gap-2">
-						<input type="checkbox" checked={ch.enabled} onchange={(e) => set((x) => (x.channels[ci].enabled = (e.target as HTMLInputElement).checked))} title="Enabled" />
-						<select class="h-8 rounded-md border border-input bg-background px-2 text-sm" value={ch.type} onchange={(e) => set((x) => (x.channels[ci].type = (e.target as HTMLSelectElement).value))}>
-							{#each channelTypes as t (t)}<option value={t}>{channelModels[t].label} ({channelModels[t].ion}⁺)</option>{/each}
-						</select>
-						<select class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm" value={ch.profile} onchange={(e) => set((x) => (x.channels[ci].profile = (e.target as HTMLSelectElement).value))}>
-							<option value="">all cells</option>
-							{#each ex.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-						</select>
+						<Checkbox checked={ch.enabled} onCheckedChange={(v) => set((x) => (x.channels[ci].enabled = v === true))} title="Enabled" />
+						<NativeSelect.Root value={ch.type} onchange={(e) => set((x) => (x.channels[ci].type = (e.target as HTMLSelectElement).value))}>
+							{#each channelTypes as t (t)}<NativeSelect.Option value={t}>{channelModels[t].label} ({channelModels[t].ion}⁺)</NativeSelect.Option>{/each}
+						</NativeSelect.Root>
+						<NativeSelect.Root class="min-w-0 flex-1" value={ch.profile} onchange={(e) => set((x) => (x.channels[ci].profile = (e.target as HTMLSelectElement).value))}>
+							<NativeSelect.Option value="">all cells</NativeSelect.Option>
+							{#each ex.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
+						</NativeSelect.Root>
 						<Button size="sm" variant="ghost" class="h-8 px-1.5" onclick={() => set((x) => x.channels.splice(ci, 1))} title="Delete channel"><Trash class="size-4" /></Button>
 					</div>
 					<div class="mt-1 text-sm text-muted-foreground">{channelModels[ch.type]?.blurb}</div>
@@ -356,7 +360,7 @@
 				<li>Set <b>Initial Vm</b> (Run) to −60 mV or add a <b>K leak</b> channel so the resting potential is negative. Nav channels are inactivated at 0 mV and never open otherwise.</li>
 				<li>Add <b>Nav1.3</b> (2e-14) for the upstroke and <b>Kv1.5</b> (1e-15) for repolarization.</li>
 				<li>Use a small time step (1e-4 s): gates move on the millisecond scale.</li>
-				<li>Trigger with an Events → permeability pulse of Na⁺ on a region. The spike propagates to neighbours through gap junctions.</li>
+				<li>Trigger with a windowed permeability modifier: a Na⁺ pulse on a region. The spike propagates to neighbours through gap junctions.</li>
 			</ul>
 			<h4>Regions</h4>
 			<p>A channel assigned to a region is expressed only on that region's membranes; elsewhere its open fraction is forced to zero. Gates keep evolving everywhere so switching regions is seamless.</p>
@@ -366,7 +370,7 @@
 	<SettingsDialog title="Substances & reactions" blurb="A small chemical / gene network living in every cell: substances that are produced, decay, react, diffuse through gap junctions, gate ion channels or modulate the pump. Edited as JSON for now.">
 		{#snippet summary()}{netSummary}{/snippet}
 		{#snippet form()}
-			<textarea class="h-[52vh] w-full rounded-md border border-input bg-background p-2 font-mono text-xs leading-snug" spellcheck="false" bind:value={netText}></textarea>
+			<Textarea class="h-[52vh] font-mono text-xs leading-snug md:text-xs" spellcheck="false" bind:value={netText} />
 			<div class="mt-2 flex items-center gap-2">
 				<Button size="sm" onclick={applyNetwork}>Apply</Button>
 				<Button size="sm" variant="ghost" onclick={() => { netText = JSON.stringify(ex.network ?? { substances: [], reactions: [], modulators: [], affectCharge: true }, null, 2); netError = ''; }}>Revert</Button>
@@ -400,59 +404,63 @@
 			<span class="text-sm font-semibold">Regions</span>
 			<Button size="sm" variant="outline" class="ml-auto h-7 gap-1 px-2 text-xs" onclick={addProfile} title="Add a region, then paint cells on the canvas"><Plus class="size-3.5" /> add</Button>
 		</div>
-		<div class="mt-1 text-sm text-muted-foreground">Paint cells to give them different membrane properties. Blank permeability means the ion's default.</div>
+		<div class="mt-1 text-sm text-muted-foreground">Named groups of cells. Pick "paint", then left-drag on the canvas to add cells and right-drag to erase. Modifiers and channels target regions.</div>
 		{#each ex.profiles as p, pi (p.id)}
-			<div class="mt-2 rounded-md border px-2 py-1.5 {view.activeProfile === p.id ? 'border-ring' : 'border-border'}">
-				<div class="flex items-center gap-1.5">
-					<input type="color" value={p.color} class="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" onchange={(e) => set((x) => (x.profiles[pi].color = (e.target as HTMLInputElement).value))} />
-					<input class="h-6 min-w-0 flex-1 bg-transparent px-1 text-sm font-medium outline-none" value={p.name} onchange={(e) => set((x) => (x.profiles[pi].name = (e.target as HTMLInputElement).value))} />
-					<span class="text-xs text-muted-foreground">{p.cells.length} cells</span>
-					<Button size="sm" variant={view.activeProfile === p.id ? 'default' : 'ghost'} class="h-6 px-1.5 text-xs" title="Select this region and switch to the paint tool" onclick={() => { view.activeProfile = p.id; view.tool = 'paint'; }}>paint</Button>
-					<Button size="sm" variant="ghost" class="h-6 px-1.5 text-xs" onclick={() => session.cut(p.cells)} title="Remove these cells from the cluster now">cut</Button>
-					<Button size="sm" variant="ghost" class="h-6 px-1" onclick={() => set((x) => x.profiles.splice(pi, 1))} title="Delete region"><Trash class="size-3.5" /></Button>
-				</div>
-				<div class="mt-1.5 flex flex-col gap-1">
-					{#each ex.ions as ion (ion.name)}
-						{#if ion.Dm > 0 || p.Dm[ion.name] !== undefined}
-							<NumField label="{ion.name} perm" value={p.Dm[ion.name] ?? ion.Dm} unit="m²/s" help="Membrane permeability to {ion.name} in this region (default {ion.Dm})" onchange={(v) => set((x) => (x.profiles[pi].Dm[ion.name] = v))} />
-						{/if}
-					{/each}
-					<NumField label="pump ×" value={p.pumpScale} step={0.1} min={0} help="Multiplier on the Na/K pump rate in this region. 0 = no pump." onchange={(v) => set((x) => (x.profiles[pi].pumpScale = v))} />
-					<NumField label="junctions ×" value={p.gjScale} step={0.1} min={0} help="Multiplier on gap-junction conductance for membranes of this region. 0 = isolated cells." onchange={(v) => set((x) => (x.profiles[pi].gjScale = v))} />
-				</div>
+			<div class="mt-2 flex items-center gap-1.5 rounded-md border px-2 py-1.5 {view.activeProfile === p.id ? 'border-ring' : 'border-border'}">
+				<input type="color" value={p.color} class="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" onchange={(e) => set((x) => (x.profiles[pi].color = (e.target as HTMLInputElement).value))} />
+				<Input class="h-6 min-w-20 flex-1 border-0 bg-transparent px-1 font-medium shadow-none dark:bg-transparent" value={p.name} onchange={(e) => set((x) => (x.profiles[pi].name = (e.target as HTMLInputElement).value))} />
+				<Badge variant="secondary" class="font-mono text-[11px]">{p.cells.length} cells</Badge>
+				<Button size="sm" variant={view.activeProfile === p.id && view.tool === 'paint' ? 'default' : 'ghost'} class="h-6 px-1.5 text-xs" title="Paint this region on the canvas: left drag adds cells, right drag erases" onclick={() => { view.activeProfile = p.id; view.tool = 'paint'; }}>paint</Button>
+				<Button size="sm" variant="ghost" class="h-6 px-1" onclick={() => set((x) => x.profiles.splice(pi, 1))} title="Delete region"><Trash class="size-3.5" /></Button>
 			</div>
 		{/each}
 	</div>
 
 	<div class="border-b border-border px-3 py-2.5">
 		<div class="flex items-center gap-1">
-			<span class="mr-auto text-sm font-semibold">Events</span>
-			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addEvent('perm')} title="Change an ion's permeability for a while">+perm</Button>
-			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addEvent('pump')} title="Scale the pump rate for a while">+pump</Button>
-			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addEvent('gj')} title="Scale gap-junction coupling for a while">+GJ</Button>
-			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addEvent('cut')} disabled={ex.profiles.length === 0} title="Remove a region's cells at a given time (needs a region)">+cut</Button>
+			<span class="mr-auto text-sm font-semibold">Modifiers</span>
+			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('perm')} title="Set or scale an ion's membrane permeability">+perm</Button>
+			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('pump')} title="Scale the Na/K pump rate">+pump</Button>
+			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('gj')} title="Scale gap-junction coupling">+GJ</Button>
+			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('cut')} disabled={ex.profiles.length === 0} title="Remove a region's cells at a given time (needs a region)">+cut</Button>
 		</div>
-		<div class="mt-1 text-sm text-muted-foreground">Timed interventions. Factors multiply the current value between start and end; a cut removes a region's cells for good.</div>
-		{#each ex.events as ev, i (i)}
-			<div class="mt-2 rounded-md border border-border px-2 py-1.5">
+		<div class="mt-1 text-sm text-muted-foreground">Changes to membrane properties of a region (or all cells), from a start time until an end time. Leave the end blank for permanent. Pump and junction factors multiply; permeability is set to a value or scaled by a factor.</div>
+		{#each ex.modifiers as mod, i (i)}
+			<div class="mt-2 rounded-md border border-border px-2 py-1.5 {mod.enabled ? '' : 'opacity-60'}">
 				<div class="flex items-center gap-1.5">
-					<span class="text-sm font-medium">{eventLabel[ev.kind]}</span>
-					{#if ev.kind === 'perm'}
-						<select class="h-6 rounded border border-input bg-background text-sm" value={ev.ion} onchange={(e) => set((x) => { const y = x.events[i]; if (y.kind === 'perm') y.ion = (e.target as HTMLSelectElement).value; })}>
-							{#each ex.ions as ion (ion.name)}<option value={ion.name}>{ion.name}</option>{/each}
-						</select>
+					<Checkbox checked={mod.enabled} onCheckedChange={(v) => set((x) => (x.modifiers[i].enabled = v === true))} title="Enabled" />
+					<span class="text-sm font-medium">{modLabel[mod.kind]}</span>
+					{#if mod.kind === 'perm'}
+						<NativeSelect.Root size="sm" value={mod.ion} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm') y.ion = (e.target as HTMLSelectElement).value; })}>
+							{#each ex.ions as ion (ion.name)}<NativeSelect.Option value={ion.name}>{ion.name}</NativeSelect.Option>{/each}
+						</NativeSelect.Root>
 					{/if}
-					<select class="h-6 min-w-0 flex-1 rounded border border-input bg-background text-sm" value={ev.profile} onchange={(e) => set((x) => (x.events[i].profile = (e.target as HTMLSelectElement).value))}>
-						{#if ev.kind !== 'cut'}<option value="">all cells</option>{/if}
-						{#each ex.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-					</select>
-					<Button size="sm" variant="ghost" class="h-6 px-1" onclick={() => set((x) => x.events.splice(i, 1))} title="Delete event"><Trash class="size-3.5" /></Button>
+					<NativeSelect.Root size="sm" class="min-w-0 flex-1" value={mod.profile} onchange={(e) => set((x) => (x.modifiers[i].profile = (e.target as HTMLSelectElement).value))}>
+						{#if mod.kind !== 'cut'}<NativeSelect.Option value="">all cells</NativeSelect.Option>{/if}
+						{#each ex.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
+					</NativeSelect.Root>
+					<Button size="sm" variant="ghost" class="h-6 px-1" onclick={() => set((x) => x.modifiers.splice(i, 1))} title="Delete modifier"><Trash class="size-3.5" /></Button>
 				</div>
 				<div class="mt-1.5 flex flex-col gap-1">
-					<NumField label="start" value={ev.t} unit="s" onchange={(v) => set((x) => (x.events[i].t = v))} />
-					{#if ev.kind !== 'cut'}
-						<NumField label="end" value={ev.tEnd} unit="s" onchange={(v) => set((x) => { const y = x.events[i]; if (y.kind !== 'cut') y.tEnd = v; })} />
-						<NumField label="factor ×" value={ev.factor} step={0.1} min={0} onchange={(v) => set((x) => { const y = x.events[i]; if (y.kind !== 'cut') y.factor = v; })} />
+					{#if mod.kind === 'perm'}
+						{@const ion = ex.ions.find((x) => x.name === mod.ion)}
+						<div class="flex items-center gap-1.5 text-sm">
+							<NativeSelect.Root size="sm" class="w-20 shrink-0" value={mod.value !== undefined ? 'set' : 'scale'} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'perm') return; if ((e.target as HTMLSelectElement).value === 'set') { y.value = y.factor !== undefined && ion ? ion.Dm * y.factor : (ion?.Dm ?? 0); y.factor = undefined; } else { y.factor = y.value !== undefined && ion && ion.Dm > 0 ? y.value / ion.Dm : 1; y.value = undefined; } })} title="Set an absolute permeability, or scale the current one">
+								<NativeSelect.Option value="set">set to</NativeSelect.Option>
+								<NativeSelect.Option value="scale">scale ×</NativeSelect.Option>
+							</NativeSelect.Root>
+							{#if mod.value !== undefined}
+								<NumField label="" value={mod.value} unit="m²/s" help="Membrane permeability to {mod.ion} while active (default {ion?.Dm})" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm') y.value = v; })} />
+							{:else}
+								<NumField label="" value={mod.factor ?? 1} step={0.1} min={0} help="Multiplier on the permeability to {mod.ion} while active" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm') y.factor = v; })} />
+							{/if}
+						</div>
+					{:else if mod.kind !== 'cut'}
+						<NumField label="factor ×" value={mod.factor} step={0.1} min={0} help={mod.kind === 'pump' ? 'Multiplier on the Na/K pump rate. 0 = no pump.' : 'Multiplier on gap-junction conductance. 0 = isolated cells.'} onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'cut' && y.kind !== 'perm') y.factor = v; })} />
+					{/if}
+					<NumField label={mod.kind === 'cut' ? 'at' : 'start'} value={mod.t} unit="s" onchange={(v) => set((x) => (x.modifiers[i].t = v))} />
+					{#if mod.kind !== 'cut'}
+						<NumField label="end" value={mod.tEnd ?? undefined} placeholder="never" unit="s" onchange={(v) => set((x) => (x.modifiers[i].tEnd = v))} onclear={() => set((x) => (x.modifiers[i].tEnd = null))} />
 					{/if}
 				</div>
 			</div>
