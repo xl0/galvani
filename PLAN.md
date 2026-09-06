@@ -70,7 +70,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Substance/GRN network engine with parity fixture; JSON network dialog; morphogen + gene-network presets
 - [ ] Network UI beyond JSON (forms per substance); transporters / substance pumps if needed
 - [x] Cl / HCN / cation channel families
-- [x] ER calcium store (own model, BETSE's is dead code) + Calcium waves preset. Open: IP3-driven waves via the network (slower, more realistic), and a learn chapter on calcium.
+- ER calcium: skipped for v1. BETSE's `Ca_dyn` is dead code (hard-coded False, `EndoRetic` references undefined parameters), so there is nothing to reproduce. An own CICR model was built and reverted (commit b4ef755): its tuned constants were ~10× off Li–Rinzel-family values and waves needed a 10× junction boost because real waves are IP3-carried (P_Ca ≈ 0.01 P_IP3). If revisited: Li–Rinzel gating with a physical 0.5 mM store (release ≈4e-16 m²/s, SERCA ≈0.9 µM/s), IP3 as a network substance with its own junctional permeability (~2 µm/s), and realistic junction fraction (~1e-5) which needs the implicit solver for dt.
 - [x] Init phase (`initTime`), bath-concentration modifier, GJ open / pump rate / membrane current display fields
 - [ ] Larger time steps. Tried an implicit voltage predictor (Newton on the linearised cell circuit): 500× on stiff leaks but no help for spikes (gate kinetics set dt), so dropped for simplicity. Revisit only if slow, leaky experiments become a real use case.
 - [ ] Extracellular grid (own formulation; BETSE's is heuristic)

@@ -4,7 +4,6 @@ import type { Mesh } from './mesh';
 import type { SimState } from './state';
 import { basicIons, basicParams } from './defaults';
 import type { NetworkConfig } from './network';
-import type { CalciumConfig } from './calcium';
 
 /** Named set of cells: a target for modifiers, channels and painting. */
 export const ProfileSchema = z.object({
@@ -104,13 +103,6 @@ const GeneratorSchema = z.object({
 	cellSpacing: z.number(), disorder: z.number(), scaleCell: z.number(), mask: MaskSchema
 });
 
-/** ER calcium store; needs a Ca ion. See `calcium.ts`. */
-export const CalciumSchema: z.ZodType<CalciumConfig> = z.object({
-	cEr: z.number().nonnegative(), volFraction: z.number().positive(), leakDm: z.number().nonnegative(), releaseMax: z.number().nonnegative(),
-	actKm: z.number().positive(), actN: z.number(), inhKm: z.number().positive(), inhN: z.number(), inhTau: z.number().positive(),
-	ip3: z.string(), ip3Km: z.number().positive(), ip3N: z.number(), sercaMax: z.number().nonnegative(), sercaKm: z.number().positive()
-});
-
 /** The whole experiment definition: what gets serialized into the URL. */
 export const ExperimentSchema = z.object({
 	version: z.literal(1),
@@ -127,8 +119,7 @@ export const ExperimentSchema = z.object({
 	channels: z.array(ChannelSchema).default([]),
 	/** starting membrane voltage [V]; realized by offsetting the balancing anion per cell */
 	initialVm: z.number().default(0),
-	network: NetworkSchema.nullable().default(null),
-	calcium: CalciumSchema.nullable().default(null)
+	network: NetworkSchema.nullable().default(null)
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
 
@@ -146,8 +137,7 @@ export const baseExperiment: Experiment = {
 	modifiers: [],
 	channels: [],
 	initialVm: 0,
-	network: null,
-	calcium: null
+	network: null
 };
 
 /** Changes to these require rebuilding mesh and state rather than a live update. */

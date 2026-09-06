@@ -1,7 +1,5 @@
 import { baseExperiment, type Experiment } from './core/experiment';
-import { defaultCalcium } from './core/calcium';
 import { generateMesh } from './core/generator';
-import { basicCaIons } from './core/defaults';
 
 /** Cells within radius r [m] of world point (x, y) for the experiment's generator. */
 function cellsNear(exp: Experiment, x: number, y: number, r: number): number[] {
@@ -117,25 +115,6 @@ export const presets: Preset[] = [
 				modulators: [],
 				affectCharge: true
 			};
-			return e;
-		}
-	},
-	{
-		id: 'calcium',
-		name: 'Calcium waves',
-		blurb: 'ER calcium store with calcium-induced calcium release. A brief Ca²⁺ influx on the left edge starts a wave of store release that sweeps across the sheet at tens of µm/s. Gap-junction Ca²⁺ coupling is raised 10× to carry it.',
-		make: () => {
-			const e = structuredClone(baseExperiment);
-			const W = e.generator.worldSize / 2;
-			e.name = 'Calcium waves';
-			e.ions = structuredClone(basicCaIons).map((i) => (i.name === 'Ca' ? { ...i, Dm: 5e-18, Dfree: 1e-8, cCell: 3e-5 } : i));
-			e.params = { ...e.params, dt: 2e-3, gjSurface: 5e-7 };
-			e.initialVm = -0.05;
-			e.initTime = 60;
-			e.endTime = 20;
-			e.calcium = { ...defaultCalcium };
-			e.profiles = [{ id: 'trigger', name: 'Trigger', color: '#d62728', cells: cellsNear(e, W - 55e-6, W, 16e-6) }];
-			e.modifiers = [{ kind: 'perm', ion: 'Ca', factor: 50, profile: 'trigger', t: 2, tEnd: 3, enabled: true }];
 			return e;
 		}
 	},

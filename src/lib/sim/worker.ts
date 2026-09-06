@@ -4,7 +4,6 @@ import { cutCells } from '$lib/core/cut';
 import { applyModulation, type Experiment, hasTimedModifiers, permanentOnly } from '$lib/core/experiment';
 import { generateMesh } from '$lib/core/generator';
 import { Network } from '$lib/core/network';
-import { ErCalcium } from '$lib/core/calcium';
 import type { Mesh } from '$lib/core/mesh';
 import { createState, updateV, type SimState } from '$lib/core/state';
 import { step, UnstableError } from '$lib/core/step';
@@ -26,7 +25,6 @@ let phase: 'init' | 'run' = 'run';
 const bathHeld = new Set<number>();
 let channels: ChannelInstance[] = [];
 let network: Network | null = null;
-let calcium: ErCalcium | null = null;
 
 // trace accumulation between snapshots
 let traceT: number[] = [];
@@ -59,7 +57,7 @@ function snapshot(): void {
 	const nIons = exp.ions.length;
 	const cc = new Float32Array(nIons * mesh.nCells);
 	for (let i = 0; i < nIons; i++) cc.set(state.ccCells[i], i * mesh.nCells);
-	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB), subNames: [...(network ? network.subs.map((x) => x.cfg.name) : []), ...(calcium ? ['Ca_ER', 'ER_open'] : [])] };
+	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB), subNames: network ? network.subs.map((x) => x.cfg.name) : [] };
 	traceT = []; traceV = []; traceB = [];
 	const snap = {
 		t: state.t, step: state.step, running, stepsPerSec,
@@ -67,7 +65,7 @@ function snapshot(): void {
 		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen),
 		pump: Float32Array.from(state.rateNaK), iMem: Float32Array.from(state.iMem), phase,
 		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })),
-		subs: [...(network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnv })) : []), ...(calcium ? [{ name: 'Ca_ER', cells: Float32Array.from(calcium.cEr), env: 0 }, { name: 'ER_open', cells: Float32Array.from(calcium.open), env: 0 }] : [])], trace
+		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnv })) : [], trace
 	};
 	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, snap.pump.buffer, snap.iMem.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
@@ -84,7 +82,6 @@ function load(e: Experiment): void {
 	phase = e.initTime > 0 ? 'init' : 'run';
 	applyModulation(mesh, phase === 'init' ? permanentOnly(exp) : exp, state, 0);
 	buildNetwork(null);
-	buildCalcium(null);
 	updateV(mesh, e.ions, e.params, state);
 	channels = [];
 	syncChannels();
@@ -141,23 +138,11 @@ function buildNetwork(keep: Network | null, cellMap?: Int32Array): void {
 	}
 }
 
-/** (Re)build the ER store; ER concentrations are kept across live edits and cuts. */
-function buildCalcium(keep: ErCalcium | null, cellMap?: Int32Array): void {
-	const iCa = exp.ions.findIndex((i) => i.name === 'Ca');
-	if (!exp.calcium || iCa < 0) { calcium = null; state.erRho.fill(0); return; }
-	calcium = new ErCalcium(exp.calcium, mesh, iCa);
-	if (keep) {
-		if (cellMap) { for (let c = 0; c < cellMap.length; c++) if (cellMap[c] >= 0) { calcium.cEr[cellMap[c]] = keep.cEr[c]; calcium.h[cellMap[c]] = keep.h[c]; } }
-		else { calcium.cEr.set(keep.cEr); calcium.h.set(keep.h); }
-	}
-}
-
 function update(e: Experiment): void {
 	exp = e;
 	hasTimedMods = hasTimedModifiers(e);
 	applyModulation(mesh, exp, state, state.t);
 	buildNetwork(network);
-	buildCalcium(calcium);
 	syncChannels();
 	if (!running) snapshot();
 }
@@ -178,7 +163,6 @@ function doCut(cells: Iterable<number>): void {
 	channels = channels.map((ch) => ({ ...ch, mask: pick(ch.mask), m: pick(ch.m), h: pick(ch.h), P: pick(ch.P), flux: new Float64Array(mesh.nMems) }));
 	applyModulation(mesh, exp, state, state.t);
 	buildNetwork(network, r.cellMap);
-	buildCalcium(calcium, r.cellMap);
 	syncChannels();
 	geom('cut', r.cellMap);
 }
@@ -219,14 +203,13 @@ function sampleTrace(): void {
 		traceV.push(state.vmAve[c]);
 		for (let i = 0; i < exp.ions.length; i++) traceV.push(state.ccCells[i][c]);
 		if (network) for (const sub of network.subs) traceV.push(sub.cCells[c]);
-		if (calcium) { traceV.push(calcium.cEr[c]); traceV.push(calcium.open[c]); }
 	}
 }
 
 function doStep(): boolean {
 	if (phase === 'run') fireModifiers();
 	try {
-		step(mesh, exp.ions, exp.params, state, channels, network, calcium);
+		step(mesh, exp.ions, exp.params, state, channels, network);
 	} catch (err) {
 		running = false;
 		post({ type: 'error', message: err instanceof UnstableError ? `${err.message}. Reduce the time step.` : String(err) });

@@ -12,7 +12,6 @@
 	import type { Mask } from '$lib/core/generator';
 	import { channelModels, channelTypes } from '$lib/core/channels';
 	import { fmt } from '$lib/format';
-	import { defaultCalcium } from '$lib/core/calcium';
 	import BigField from './BigField.svelte';
 	import NumField from './NumField.svelte';
 	import SettingsDialog from './SettingsDialog.svelte';
@@ -20,7 +19,6 @@
 	import * as NativeSelect from '$lib/components/ui/native-select';
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -400,49 +398,6 @@
 			<p>This is a port of BETSE's "general network" (MasterOfNetworks) for the no-extracellular-grid case, validated against it to round-off. Not ported: transporters, active pumping of substances, mitochondria, environment-zone reactions, voltage-sensitive regulators.</p>
 			<h4>Example</h4>
 			<p>Load the "Morphogen gradient" preset: one substance made in a painted source, diffusing through junctions and opening K⁺ channels, so the tissue's voltage map follows the chemical gradient. "Gene network" is BETSE's three-gene example.</p>
-		{/snippet}
-	</SettingsDialog>
-
-	<SettingsDialog title="Calcium store" blurb="An endoplasmic-reticulum Ca²⁺ store in every cell: SERCA uptake, a leak, and release channels gated by cytosolic Ca²⁺ (calcium-induced calcium release). Needs a Ca ion.">
-		{#snippet summary()}{#if !hasCa}needs a Ca ion{:else if !ex.calcium}off{:else}store {fmt(ex.calcium.cEr, 3)} mM · release {fmt(ex.calcium.releaseMax, 2)} m²/s · SERCA {fmt(ex.calcium.sercaMax, 2)} mol/m²·s{/if}{/snippet}
-		{#snippet form()}
-			<Label class="gap-3 py-2"><Checkbox checked={!!ex.calcium} disabled={!hasCa} onCheckedChange={(v) => set((x) => (x.calcium = v === true ? { ...defaultCalcium } : null))} /><span><span class="text-sm font-medium">Enable the ER store</span><br /><span class="text-sm font-normal text-muted-foreground">{hasCa ? 'Adds an intracellular Ca²⁺ store; shows up as the [Ca_ER] and [ER_open] fields and trace quantities.' : 'Switch the ion set to one with Ca²⁺ first (Ions → with calcium).'}</span></span></Label>
-			{#if ex.calcium}
-				{@const c = ex.calcium}
-				<BigField label="Store Ca²⁺" value={c.cEr} unit="mM" description="Initial ER Ca²⁺ concentration. Real stores hold 0.1–1 mM." onchange={(v) => set((x) => (x.calcium!.cEr = v))} />
-				<BigField label="Store volume" value={c.volFraction} description="ER volume as a fraction of cell volume. The ER membrane area is taken equal to the cell membrane area." onchange={(v) => set((x) => (x.calcium!.volFraction = v))} />
-				<BigField label="SERCA rate" value={c.sercaMax} unit="mol/m²·s" description="Maximum uptake into the store (Hill 2 in cytosolic Ca²⁺). Sets how fast the store refills and how low cytosolic Ca²⁺ rests." onchange={(v) => set((x) => (x.calcium!.sercaMax = v))} />
-				<BigField label="SERCA Km" value={c.sercaKm} scale={1e3} unit="µM" description="Cytosolic Ca²⁺ at half-maximal uptake." onchange={(v) => set((x) => (x.calcium!.sercaKm = v))} />
-				<BigField label="Leak" value={c.leakDm} unit="m²/s" description="Always-open permeability of the ER membrane to Ca²⁺." onchange={(v) => set((x) => (x.calcium!.leakDm = v))} />
-				<BigField label="Release max" value={c.releaseMax} unit="m²/s" description="Permeability of the release channels when fully open. Larger = stronger, faster regenerative release; too large and cells fire spontaneously." onchange={(v) => set((x) => (x.calcium!.releaseMax = v))} />
-				<BigField label="Activation Km" value={c.actKm} scale={1e3} unit="µM" description="Cytosolic Ca²⁺ at which release channels are half activated (fast). Just above the resting level makes the tissue excitable; at or below it, oscillatory." onchange={(v) => set((x) => (x.calcium!.actKm = v))} />
-				<BigField label="Activation n" value={c.actN} step={1} description="Hill exponent of activation. Steeper (4) keeps basal release small at rest." onchange={(v) => set((x) => (x.calcium!.actN = v))} />
-				<BigField label="Inactivation Km" value={c.inhKm} scale={1e3} unit="µM" description="Cytosolic Ca²⁺ at which the slow inactivation gate is half closed. Ends a release event." onchange={(v) => set((x) => (x.calcium!.inhKm = v))} />
-				<BigField label="Inactivation n" value={c.inhN} step={1} description="Hill exponent of inactivation." onchange={(v) => set((x) => (x.calcium!.inhN = v))} />
-				<BigField label="Inactivation τ" value={c.inhTau} unit="s" description="Time constant of the inactivation gate. Sets the duration of a release event and the refractory period." onchange={(v) => set((x) => (x.calcium!.inhTau = v))} />
-				<div class="grid grid-cols-[10rem_1fr] items-start gap-x-3 gap-y-0.5 py-2">
-					<span class="pt-1.5 text-sm font-medium">IP₃ substance</span>
-					<NativeSelect.Root value={c.ip3} onchange={(e) => set((x) => (x.calcium!.ip3 = (e.target as HTMLSelectElement).value))}>
-						<NativeSelect.Option value="">none (Ca²⁺-gated only)</NativeSelect.Option>
-						{#each ex.network?.substances ?? [] as sub (sub.name)}<NativeSelect.Option value={sub.name}>{sub.name}</NativeSelect.Option>{/each}
-					</NativeSelect.Root>
-					<span class="col-start-2 text-sm leading-snug text-muted-foreground">Optionally require a network substance (IP₃) to open release channels as well, with its own Hill activation below.</span>
-				</div>
-				{#if c.ip3}
-					<BigField label="IP₃ Km" value={c.ip3Km} unit="mM" description="Substance concentration at half activation." onchange={(v) => set((x) => (x.calcium!.ip3Km = v))} />
-					<BigField label="IP₃ n" value={c.ip3N} step={1} description="Hill exponent." onchange={(v) => set((x) => (x.calcium!.ip3N = v))} />
-				{/if}
-			{/if}
-		{/snippet}
-		{#snippet explain()}
-			<h4>The model</h4>
-			<p>Each cell gets an ER compartment (a fraction of its volume, the same membrane area). Three things move Ca²⁺ across the ER membrane: SERCA uptake (Michaelis-Menten, Hill 2), a passive leak, and release channels whose open fraction is a fast Hill activation by cytosolic Ca²⁺ times a slow inactivation gate that relaxes toward a decreasing Hill function of Ca²⁺ (the Li–Rinzel form of the IP₃ receptor). Optionally an IP₃ substance from the network must be present too.</p>
-			<h4>Charge</h4>
-			<p>Exchange with the store is treated as charge-compensated, as it is in real cells where counter-ions follow: moving Ca²⁺ into or out of the ER does not change the membrane voltage.</p>
-			<h4>Waves</h4>
-			<p>A local rise in cytosolic Ca²⁺ opens release channels, which raises Ca²⁺ further: calcium-induced calcium release. Ca²⁺ diffusing through gap junctions carries that to the neighbours, so an excitable sheet propagates a wave, as in the "Calcium waves" preset. Whether it is excitable (fires once when pushed) or oscillatory (fires on its own as the store refills) is set by the activation Km relative to resting Ca²⁺.</p>
-			<h4>Provenance</h4>
-			<p>This is Galvani's own model. BETSE's ER code is disabled upstream and has no working reference, so there is no parity fixture; the defaults were tuned for a stable rest, no spontaneous firing, and a propagating wave.</p>
 		{/snippet}
 	</SettingsDialog>
 
