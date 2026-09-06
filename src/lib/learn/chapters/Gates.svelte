@@ -1,6 +1,10 @@
 <script lang="ts">
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
 	import { onDestroy } from 'svelte';
+	import Eq from '$lib/components/learn/Eq.svelte';
 	import Lesson from '$lib/components/learn/Lesson.svelte';
+	import FigGates from '$lib/learn/figures/FigGates.svelte';
 	import MiniChart from '$lib/components/learn/MiniChart.svelte';
 	import { MiniSim } from '$lib/learn/minisim.svelte';
 	import { oneCell } from '$lib/learn/meshes';
@@ -27,31 +31,32 @@
 </script>
 
 <Lesson title="5 · Gates: how a cell fires">
-	<p>A leak is a fixed permeability. A <b>voltage-gated channel</b> is a permeability that depends on the voltage itself, with a delay. That feedback is what turns a quiet membrane into one that can fire.</p>
+	<p>A leak is a fixed permeability. A <b>voltage-gated channel</b> is a permeability that depends on V<sub>m</sub> itself, with a delay. That feedback loop is what turns a passive membrane into an excitable one.</p>
 	<h3>The Hodgkin-Huxley picture</h3>
-	<p>Each channel population has an activation gate <code>m</code> and an inactivation gate <code>h</code>, numbers between 0 and 1. For any voltage each gate has a resting value it relaxes toward (the S-shaped curves on the right) and a time constant for how fast it gets there. The channel is open in proportion to <code>m<sup>a</sup>·h<sup>b</sup></code>, and that open fraction times the channel's maximum permeability is added to the ion's leak.</p>
-	<h3>The spike, step by step</h3>
+	<p>Each channel population is described by an activation variable <code>m</code> and, for channels that inactivate, an inactivation variable <code>h</code>, both between 0 and 1. For any voltage each variable has a steady-state value it relaxes toward (the sigmoid curves on the right) and a time constant τ(V) for how quickly it gets there. The open probability is <Eq inline tex={String.raw`m^a h^b`} />, with integer exponents that reflect the number of independent gating subunits, and open probability times the channel's maximal permeability is added to the ion's leak. The gate kinetics used here are the published Hodgkin-Huxley-style fits for specific isoforms (Nav1.3, Kv1.5, …), so the time constants are the real ones.</p>
+	<FigGates />
+	<h3>The action potential, step by step</h3>
 	<ul>
-		<li>At −60 mV the sodium channel's <code>m</code> is near 0 (closed) and <code>h</code> near 1 (not inactivated). It is armed.</li>
-		<li>A small depolarization raises <code>m</code> within a fraction of a millisecond. Na⁺ rushes in (its Nernst voltage is +67 mV), depolarizing further: positive feedback, the upstroke.</li>
-		<li>Two slower things end it: <code>h</code> falls (the sodium channel inactivates), and the potassium channel's <code>m</code> rises, letting K⁺ out toward −89 mV. The membrane repolarizes, overshoots (the afterhyperpolarization), and the gates slowly reset.</li>
+		<li>At −60 mV the Na⁺ channel's <code>m</code> is near 0 (closed) and <code>h</code> near 1 (not inactivated). It is primed.</li>
+		<li>A depolarisation past threshold raises <code>m</code> within a fraction of a millisecond. Na⁺ enters down a large driving force (E<sub>Na</sub> ≈ +67 mV), depolarising further: regenerative positive feedback, the upstroke.</li>
+		<li>Two slower processes terminate it. <code>h</code> falls (Na⁺ channels inactivate), and the delayed-rectifier K⁺ channel's <code>m</code> rises, letting K⁺ out toward E<sub>K</sub> ≈ −89 mV. V<sub>m</sub> repolarises, undershoots (the afterhyperpolarisation, while K⁺ conductance is still high), and the gates recover. Until <code>h</code> has recovered the cell is refractory.</li>
 	</ul>
 	<h3>Try it</h3>
 	<ul>
 		<li>Run, then press <b>Stimulate</b>: a 10 ms sodium-permeability pulse, enough to reach threshold. Watch V<sub>m</sub> and the two open fractions.</li>
-		<li>Turn off Kv and stimulate: the cell depolarizes and stays there, because nothing brings it back. Turn off Nav: the pulse causes only a small bump.</li>
-		<li>Note the time axis: everything happens in milliseconds, which is why this chapter runs at 1/5 real time and uses a 0.1 ms step.</li>
+		<li>Disable Kv and stimulate: the cell depolarises and stays there, because nothing repolarises it and Na⁺ inactivation alone only stops the influx. Disable Nav: the pulse produces a small passive bump.</li>
+		<li>Note the time axis: everything happens in milliseconds, which is why this chapter runs at ⅕ real time and uses a 0.1 ms step.</li>
 	</ul>
 	{#snippet demo()}
 		<div class="mb-2 flex items-center gap-2">
 			{#if sim.running}<Button size="sm" variant="secondary" onclick={() => sim.pause()}>Pause</Button>{:else}<Button size="sm" onclick={() => sim.run()}>Run</Button>{/if}
 			<Button size="sm" variant="ghost" onclick={() => sim.reset()}>Reset</Button>
 			<Button size="sm" variant="default" onclick={fire}>Stimulate</Button>
-			<span class="ml-auto font-mono text-xs text-muted-foreground">t = {(sim.t * 1e3).toFixed(0)} ms · ⅕ real time</span>
+			<span class="ml-auto font-mono text-sm text-muted-foreground">t = {(sim.t * 1e3).toFixed(0)} ms · ⅕ real time</span>
 		</div>
 		<div class="mb-2 flex gap-4 text-sm">
-			<label class="flex items-center gap-1"><input type="checkbox" bind:checked={navOn} onchange={() => sim.setChannelMax(1, navOn ? 2e-14 : 0)} /> Nav1.3</label>
-			<label class="flex items-center gap-1"><input type="checkbox" bind:checked={kvOn} onchange={() => sim.setChannelMax(2, kvOn ? 1e-15 : 0)} /> Kv1.5</label>
+			<Label class="gap-1.5 font-normal"><Checkbox bind:checked={navOn} onCheckedChange={(v) => sim.setChannelMax(1, v === true ? 2e-14 : 0)} /> Nav1.3</Label>
+			<Label class="gap-1.5 font-normal"><Checkbox bind:checked={kvOn} onCheckedChange={(v) => sim.setChannelMax(2, v === true ? 1e-15 : 0)} /> Kv1.5</Label>
 			<span class="ml-auto font-mono text-muted-foreground">V<sub>m</sub> {fmt(sim.vm[0] ?? 0, 3)} mV</span>
 		</div>
 		<MiniChart series={[{ label: 'Vm', color: '#e6194b', x: vm.x, y: vm.y }]} xlabel="time (s)" ylabel="mV" height={150} />

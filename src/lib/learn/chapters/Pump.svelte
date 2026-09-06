@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import Eq from '$lib/components/learn/Eq.svelte';
 	import Lesson from '$lib/components/learn/Lesson.svelte';
+	import FigPump from '$lib/learn/figures/FigPump.svelte';
 	import MiniChart from '$lib/components/learn/MiniChart.svelte';
 	import Slider from '$lib/components/learn/Slider.svelte';
 	import { MiniSim } from '$lib/learn/minisim.svelte';
 	import { oneCell } from '$lib/learn/meshes';
-	import { fmt } from '$lib/format';
+	import { fmt, si } from '$lib/format';
 	import { Button } from '$lib/components/ui/button';
 
 	const sim = new MiniSim({ mesh: oneCell(), params: { dt: 0.01, alphaNaK: 1e-7 }, speed: 40, traceEvery: 2 });
@@ -17,27 +19,28 @@
 </script>
 
 <Lesson title="3 · The pump: where the gradients come from">
-	<p>Leaks alone would let the gradients run down, and with them the voltage. Cells spend a large share of their energy on one enzyme that pushes back: the <b>Na⁺/K⁺-ATPase</b>. Each cycle burns one ATP, throws three Na⁺ out and pulls two K⁺ in.</p>
+	<p>Passive leaks alone would let the gradients run down, and with them the resting potential. What holds them up is primary active transport, above all the <b>Na⁺/K⁺-ATPase</b>, which in many cell types consumes 20–70 % of the cell's ATP. Each catalytic cycle hydrolyses one ATP, exports three Na⁺ and imports two K⁺, both against their gradients.</p>
+	<FigPump />
 	<h3>Two consequences</h3>
 	<ul>
-		<li><b>Gradients.</b> Sodium stays low inside and potassium high, however leaky the membrane is, as long as ATP lasts.</li>
-		<li><b>Charge.</b> 3 out, 2 in: every cycle removes one positive charge from the cell. The pump is <i>electrogenic</i>: it makes the inside negative directly, on top of what the leaks do. With BETSE's default permeabilities this is the main reason the cell rests at about −20 mV rather than the GHK prediction of ≈0.</li>
+		<li><b>Gradients.</b> Cytosolic Na⁺ stays low and K⁺ high regardless of leak, for as long as ATP is available. Secondary transporters (Na⁺/Ca²⁺ exchange, Na⁺-coupled uptake) all draw on the Na⁺ gradient the pump builds.</li>
+		<li><b>Charge.</b> Three charges out, two in: each cycle removes one net positive charge from the cell. The pump is <i>electrogenic</i>; it contributes directly to hyperpolarisation, on top of the K⁺ gradient it maintains. In real neurons this is a few millivolts. In BETSE's default cell, where the leak permeabilities are nearly equal, it is the dominant reason the cell rests at about −20 mV instead of the GHK prediction near 0.</li>
 	</ul>
 	<h3>How the model runs it</h3>
-	<p>The rate is a Michaelis-Menten law in intracellular Na⁺, extracellular K⁺ and ATP (it saturates), multiplied by a thermodynamic factor <code>1 − Q/K<sub>eq</sub></code>. Q grows as the gradients and the voltage store energy; when the stored energy equals what ATP hydrolysis releases, the factor hits zero and the pump stalls. So the pump does not run away; it settles at a steady state where its work exactly replaces what leaks back.</p>
+	<p>The pump rate follows Michaelis-Menten saturation in cytosolic Na⁺, extracellular K⁺ and ATP, multiplied by a thermodynamic factor <Eq inline tex={String.raw`1 - Q/K_\text{eq}`} />. Q is the reaction quotient of the whole transport cycle, so it includes the Na⁺ and K⁺ gradients and the electrical work of moving one net charge across V<sub>m</sub>. When the free energy stored in gradients and voltage equals the free energy of ATP hydrolysis, the factor reaches zero and the pump stalls. The cell therefore approaches a steady state in which pump flux exactly replaces what leaks back, rather than running away.</p>
 	<h3>Try it</h3>
 	<ul>
-		<li>Run at the default rate and watch V<sub>m</sub> go negative while Na⁺ inside falls and K⁺ rises.</li>
-		<li>Set the rate to 0: the gradients and voltage decay toward the leak-only state of chapter 2.</li>
-		<li>Raise the rate tenfold: same destination, reached faster. The endpoint is set by thermodynamics, the speed by enzyme rate.</li>
+		<li>Run at the default rate: V<sub>m</sub> goes negative while cytosolic Na⁺ falls and K⁺ rises.</li>
+		<li>Set the rate to 0. Gradients and voltage decay toward the leak-only state of chapter 2, which is what happens to a cell under ouabain or metabolic poisoning, only slower here because the leaks are small.</li>
+		<li>Raise the rate tenfold: same endpoint, reached faster. Thermodynamics sets the destination; enzyme kinetics set the speed.</li>
 	</ul>
 	{#snippet demo()}
 		<div class="mb-2 flex items-center gap-2">
 			{#if sim.running}<Button size="sm" variant="secondary" onclick={() => sim.pause()}>Pause</Button>{:else}<Button size="sm" onclick={() => sim.run()}>Run</Button>{/if}
 			<Button size="sm" variant="ghost" onclick={() => sim.reset()}>Reset</Button>
-			<span class="ml-auto font-mono text-xs text-muted-foreground">t = {sim.t.toFixed(1)} s · 40× real time</span>
+			<span class="ml-auto font-mono text-sm text-muted-foreground">t = {sim.t.toFixed(1)} s · 40× real time</span>
 		</div>
-		<Slider label="pump max rate" bind:value={rate} min={1e-9} max={1e-6} log unit="mol/m²·s" format={(v) => v.toExponential(1)} onchange={(v) => (sim.params.alphaNaK = v)} />
+		<Slider label="pump max rate" bind:value={rate} min={1e-9} max={1e-6} log format={(v) => si(v, 'mol/m²·s', 2)} onchange={(v) => (sim.params.alphaNaK = v)} />
 		<div class="my-2 grid grid-cols-3 gap-2 text-center font-mono text-sm">
 			<div class="rounded border border-border p-2">V<sub>m</sub><br /><span class="text-lg">{fmt(sim.vm[0] ?? 0, 3)} mV</span></div>
 			<div class="rounded border border-border p-2">Na⁺ in<br /><span class="text-lg">{fmt(sim.cc[0]?.[0] ?? 0, 4)} mM</span></div>

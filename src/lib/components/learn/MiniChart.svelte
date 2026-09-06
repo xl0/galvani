@@ -7,7 +7,7 @@
 	let wrap: HTMLDivElement;
 	let canvas: HTMLCanvasElement;
 	let width = $state(400);
-	const PAD = { l: 52, r: 12, t: 10, b: 26 };
+	const PAD = { l: 58, r: 12, t: 10, b: 28 };
 	const css = (n: string) => getComputedStyle(wrap).getPropertyValue(n).trim();
 	const tickStep = (span: number, n: number) => { const raw = span / n, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; };
 	const label = (v: number, step: number) => { const d = Math.max(0, -Math.floor(Math.log10(step))); return d > 6 ? v.toExponential(1) : v.toFixed(d); };
@@ -34,10 +34,10 @@
 		const x0 = PAD.l, x1 = width - PAD.r, y0 = PAD.t, y1 = height - PAD.b;
 		const X = (x: number) => x0 + ((x - xlo) / (xhi - xlo)) * (x1 - x0);
 		const Y = (y: number) => y1 - ((y - ylo) / (yhi - ylo)) * (y1 - y0);
-		ctx.font = '10px ui-monospace, monospace'; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+		ctx.font = '12px ui-monospace, monospace'; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
 		const xs = tickStep(xhi - xlo, 5), ys = tickStep(yhi - ylo, 4);
 		ctx.textAlign = 'center';
-		for (let v = Math.ceil(xlo / xs) * xs; v <= xhi + 1e-12; v += xs) { const x = Math.round(X(v)) + 0.5; ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); ctx.fillText(label(v, xs), x, y1 + 12); }
+		for (let v = Math.ceil(xlo / xs) * xs; v <= xhi + 1e-12; v += xs) { const x = Math.round(X(v)) + 0.5; ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); ctx.fillText(label(v, xs), x, y1 + 14); }
 		ctx.textAlign = 'right';
 		for (let v = Math.ceil(ylo / ys) * ys; v <= yhi + 1e-12; v += ys) { const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.fillText(label(v, ys), x0 - 4, y + 3); }
 		ctx.textAlign = 'center'; ctx.fillText(xlabel, (x0 + x1) / 2, height - 3);

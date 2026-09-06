@@ -17,8 +17,8 @@
 		<span class="text-sm text-muted-foreground">/ How the model works</span>
 		<a href="/" class="ml-auto text-sm underline decoration-dotted underline-offset-2">Workbench →</a>
 	</header>
-	<div class="mx-auto grid max-w-7xl gap-8 px-4 py-6 md:grid-cols-[13rem_minmax(0,1fr)]">
-		<nav class="text-sm md:sticky md:top-4 md:self-start">
+	<div class="mx-auto grid max-w-[120rem] gap-10 px-6 py-6 md:grid-cols-[14rem_minmax(0,1fr)]">
+		<nav class="text-base md:sticky md:top-4 md:self-start">
 			<ol class="flex flex-col gap-1">
 				{#each chapters as c, i (c.slug)}
 					<li><a href="/learn/{c.slug}" class="block rounded px-2 py-1 {c.slug === chapter.slug ? 'bg-accent font-medium' : 'text-muted-foreground hover:bg-accent/50'}">{i + 1}. {c.short}</a></li>
