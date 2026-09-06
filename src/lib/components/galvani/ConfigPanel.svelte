@@ -201,9 +201,9 @@
 	</SettingsDialog>
 
 	<SettingsDialog title="Run" blurb="Time stepping and the physical constants that set the scale of the response.">
-		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · {#if ex.initTime > 0}init {fmt(ex.initTime, 3)} s · {/if}end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T - 273.15, 3)} °C{/snippet}
+		{#snippet summary()}dt {fmt(ex.params.dt * 1e3, 3)} ms · {#if ex.initTime > 0}init {fmt(ex.initTime, 3)} s · {/if}end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T - 273.15, 3)} °C{/snippet}
 		{#snippet form()}
-			<BigField label="Time step" value={ex.params.dt} unit="s" description="Integration step. Smaller is more accurate and slower. Steps longer than the membrane RC time go unstable (Vm explodes, run halts): ~0.01 s at default permeabilities, ~0.1 ms with strong channels." onchange={(v) => set((e) => (e.params.dt = v))} />
+			<BigField label="Time step" value={ex.params.dt} scale={1e3} unit="ms" description="Integration step. Smaller is more accurate and slower. Steps longer than the membrane RC time go unstable (Vm explodes, run halts): ~10 ms at default permeabilities, ~0.1 ms with strong channels." onchange={(v) => set((e) => (e.params.dt = v))} />
 			<BigField label="End time" value={ex.endTime} unit="s" description="The run pauses when simulated time reaches this. Press Run again to restart from zero." onchange={(v) => set((e) => (e.endTime = v))} />
 			<BigField label="Initialisation" value={ex.initTime} unit="s" description="BETSE-style init phase: simulate this long first with only the permanent modifiers (no timed interventions, cuts or bath changes), then restart the clock at 0 and begin the experiment from that settled state. 0 = start directly. Recorded frames and traces begin after initialisation." onchange={(v) => set((e) => (e.initTime = v))} />
 			<BigField label="Initial Vm" value={ex.initialVm} scale={1e3} unit="mV" description="Starting membrane voltage. Realized by adding a little balancing anion inside each cell so the charge-capacitor relation gives this Vm at t = 0. Saves waiting a minute for the pump to polarize the cluster." onchange={(v) => set((e) => (e.initialVm = v))} />
