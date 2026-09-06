@@ -17,7 +17,8 @@
 	import NumField from './NumField.svelte';
 	import SettingsDialog from './SettingsDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import * as NativeSelect from '$lib/components/ui/native-select';
+	import Pick from './Pick.svelte';
+	import * as Select from '$lib/components/ui/select';
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
@@ -137,17 +138,21 @@
 
 <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto">
 	<div class="flex items-center gap-2 border-b border-border px-3 py-2">
-		<NativeSelect.Root class="min-w-0 flex-1" value="" onchange={(e) => { loadPreset((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ''; }}>
-			<NativeSelect.Option value="" disabled>Load an experiment…</NativeSelect.Option>
-			<NativeSelect.OptGroup label="Presets">
-				{#each presets as p (p.id)}<NativeSelect.Option value={p.id} title={p.blurb}>{p.name}</NativeSelect.Option>{/each}
-			</NativeSelect.OptGroup>
-			{#if library.length}
-				<NativeSelect.OptGroup label="Saved in this browser">
-					{#each library as e (e.name)}<NativeSelect.Option value={'lib:' + e.name}>{e.name}</NativeSelect.Option>{/each}
-				</NativeSelect.OptGroup>
-			{/if}
-		</NativeSelect.Root>
+		<Select.Root type="single" value="" onValueChange={(v) => { if (v) loadPreset(v); }}>
+			<Select.Trigger class="h-8 min-w-0 flex-1 text-sm" size="sm">Load an experiment…</Select.Trigger>
+			<Select.Content>
+				<Select.Group>
+					<Select.GroupHeading>Presets</Select.GroupHeading>
+					{#each presets as p (p.id)}<Select.Item value={p.id} label={p.name} title={p.blurb} />{/each}
+				</Select.Group>
+				{#if library.length}
+					<Select.Group>
+						<Select.GroupHeading>Saved in this browser</Select.GroupHeading>
+						{#each library as e (e.name)}<Select.Item value={'lib:' + e.name} label={e.name} />{/each}
+					</Select.Group>
+				{/if}
+			</Select.Content>
+		</Select.Root>
 		<Button size="sm" variant="outline" class="h-8 px-2" onclick={savePreset} title="Save the current experiment in this browser"><Save class="size-4" /></Button>
 		{#if inLibrary}<Button size="sm" variant="ghost" class="h-8 px-2" onclick={deletePreset} title="Remove this saved experiment"><Trash class="size-4" /></Button>{/if}
 	</div>
@@ -162,13 +167,7 @@
 			<div class="grid grid-cols-[10rem_1fr] items-start gap-x-3 gap-y-0.5 py-2">
 				<span class="pt-1.5 text-sm font-medium">Shape</span>
 				<span class="flex flex-wrap items-center gap-2">
-					<NativeSelect.Root value={shapeKind} onchange={(e) => { const k = (e.target as HTMLSelectElement).value; if (k !== 'custom') setShape(k); }}>
-						<NativeSelect.Option value="circle">Disc</NativeSelect.Option>
-						<NativeSelect.Option value="ellipse">Ellipse</NativeSelect.Option>
-						<NativeSelect.Option value="rect">Rectangle</NativeSelect.Option>
-						{#each Object.entries(builtinShapes) as [k, s] (k)}<NativeSelect.Option value={k}>{s.label}</NativeSelect.Option>{/each}
-						<NativeSelect.Option value="custom">Custom outline…</NativeSelect.Option>
-					</NativeSelect.Root>
+					<Pick size="default" items={[{ value: 'circle', label: 'Disc' }, { value: 'ellipse', label: 'Ellipse' }, { value: 'rect', label: 'Rectangle' }, ...Object.entries(builtinShapes).map(([k, s]) => ({ value: k, label: s.label })), { value: 'custom', label: 'Custom outline…' }]} value={shapeKind} onchange={(k) => { if (k !== 'custom') setShape(k); }} />
 					<label class="cursor-pointer rounded-md border border-input px-2 py-1.5 text-sm hover:bg-accent">
 						upload SVG / PNG<input type="file" accept=".svg,.png,image/svg+xml,image/png" class="hidden" onchange={uploadShape} />
 					</label>
@@ -372,13 +371,8 @@
 				<div class="mb-3 rounded-md border border-border p-3">
 					<div class="flex items-center gap-2">
 						<Checkbox checked={ch.enabled} onCheckedChange={(v) => set((x) => (x.channels[ci].enabled = v === true))} title="Enabled" />
-						<NativeSelect.Root value={ch.type} onchange={(e) => set((x) => (x.channels[ci].type = (e.target as HTMLSelectElement).value))}>
-							{#each channelTypes as t (t)}<NativeSelect.Option value={t}>{channelModels[t].label} ({channelModels[t].ion}⁺)</NativeSelect.Option>{/each}
-						</NativeSelect.Root>
-						<NativeSelect.Root class="min-w-0 flex-1" value={ch.profile} onchange={(e) => set((x) => (x.channels[ci].profile = (e.target as HTMLSelectElement).value))}>
-							<NativeSelect.Option value="">all cells</NativeSelect.Option>
-							{#each ex.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
-						</NativeSelect.Root>
+						<Pick size="default" items={channelTypes.map((t) => ({ value: t, label: `${channelModels[t].label} (${channelModels[t].ion}⁺)`, title: channelModels[t].blurb }))} value={ch.type} onchange={(v) => set((x) => (x.channels[ci].type = v))} />
+						<Pick size="default" class="min-w-0 flex-1" items={[{ value: '', label: 'all cells' }, ...ex.profiles.map((p) => ({ value: p.id, label: p.name }))]} value={ch.profile} onchange={(v) => set((x) => (x.channels[ci].profile = v))} />
 						<Button size="sm" variant="ghost" class="h-8 px-1.5" onclick={() => set((x) => x.channels.splice(ci, 1))} title="Delete channel"><Trash class="size-4" /></Button>
 					</div>
 					<div class="mt-1 text-sm text-muted-foreground">{channelModels[ch.type]?.blurb}</div>
@@ -470,17 +464,12 @@
 					<Checkbox checked={mod.enabled} onCheckedChange={(v) => set((x) => (x.modifiers[i].enabled = v === true))} title="Enabled" />
 					<span class="text-sm font-medium">{modLabel[mod.kind]}</span>
 					{#if mod.kind === 'perm' || mod.kind === 'bath'}
-						<NativeSelect.Root size="sm" value={mod.ion} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.ion = (e.target as HTMLSelectElement).value; })}>
-							{#each ex.ions as ion (ion.name)}<NativeSelect.Option value={ion.name}>{ion.name}</NativeSelect.Option>{/each}
-						</NativeSelect.Root>
+						<Pick class="h-6" items={ex.ions.map((ion) => ({ value: ion.name, label: ion.name }))} value={mod.ion} onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.ion = v; })} />
 					{/if}
 					{#if mod.kind === 'bath' || mod.kind === 'voltage'}
 						<span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">{mod.kind === 'bath' ? (ex.ecm ? 'world edges' : 'whole bath') : 'extracellular space'}</span>
 					{:else}
-						<NativeSelect.Root size="sm" class="min-w-0 flex-1" value={mod.profile} onchange={(e) => set((x) => (x.modifiers[i].profile = (e.target as HTMLSelectElement).value))}>
-							{#if mod.kind !== 'cut'}<NativeSelect.Option value="">all cells</NativeSelect.Option>{/if}
-							{#each ex.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
-						</NativeSelect.Root>
+						<Pick class="h-6 min-w-0 flex-1" items={[...(mod.kind !== 'cut' ? [{ value: '', label: 'all cells' }] : []), ...ex.profiles.map((p) => ({ value: p.id, label: p.name }))]} value={mod.profile} placeholder="pick a region" onchange={(v) => set((x) => (x.modifiers[i].profile = v))} />
 					{/if}
 					<Button size="sm" variant="ghost" class="h-6 px-1" onclick={() => set((x) => x.modifiers.splice(i, 1))} title="Delete modifier"><Trash class="size-3.5" /></Button>
 				</div>
@@ -490,10 +479,7 @@
 						{@const base = mod.kind === 'perm' ? (ion?.Dm ?? 0) : (ion?.cEnv ?? 0)}
 						{@const unit = mod.kind === 'perm' ? 'm²/s' : 'mM'}
 						<div class="flex items-center gap-1.5 text-sm">
-							<NativeSelect.Root size="sm" class="w-20 shrink-0" value={mod.value !== undefined ? 'set' : 'scale'} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'perm' && y.kind !== 'bath') return; if ((e.target as HTMLSelectElement).value === 'set') { y.value = base * (y.factor ?? 1); y.factor = undefined; } else { y.factor = y.value !== undefined && base > 0 ? y.value / base : 1; y.value = undefined; } })} title="Set an absolute value, or scale the experiment's value">
-								<NativeSelect.Option value="set">set to</NativeSelect.Option>
-								<NativeSelect.Option value="scale">scale ×</NativeSelect.Option>
-							</NativeSelect.Root>
+							<Pick class="h-6 w-20 shrink-0" items={[{ value: 'set', label: 'set to' }, { value: 'scale', label: 'scale ×' }]} value={mod.value !== undefined ? 'set' : 'scale'} onchange={(m) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'perm' && y.kind !== 'bath') return; if (m === 'set') { y.value = base * (y.factor ?? 1); y.factor = undefined; } else { y.factor = y.value !== undefined && base > 0 ? y.value / base : 1; y.value = undefined; } })} title="Set an absolute value, or scale the experiment's value" />
 							{#if mod.value !== undefined}
 								<NumField label="" value={mod.value} {unit} help="{mod.kind === 'perm' ? 'Membrane permeability to' : 'Bath concentration of'} {mod.ion} while active (experiment value {base})" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.value = v; })} />
 							{:else}
@@ -504,12 +490,8 @@
 						<NumField label="peak" value={mod.peak} scale={1e3} unit="mV" help="Voltage applied at the positive edge; the negative edge gets minus this. BETSE demo uses 1 mV." onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.peak = v; })} />
 						<div class="flex items-center gap-1.5 text-sm">
 							<span class="w-20 shrink-0 text-muted-foreground">edges</span>
-							<NativeSelect.Root size="sm" value={mod.pos} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.pos = (e.target as HTMLSelectElement).value as 'T' | 'B' | 'L' | 'R'; })} title="Positive edge">
-								{#each ['T', 'B', 'L', 'R'] as k (k)}<NativeSelect.Option value={k}>+ {edgeLabel[k as 'T']}</NativeSelect.Option>{/each}
-							</NativeSelect.Root>
-							<NativeSelect.Root size="sm" value={mod.neg} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.neg = (e.target as HTMLSelectElement).value as 'T' | 'B' | 'L' | 'R'; })} title="Negative edge">
-								{#each ['T', 'B', 'L', 'R'] as k (k)}<NativeSelect.Option value={k}>− {edgeLabel[k as 'T']}</NativeSelect.Option>{/each}
-							</NativeSelect.Root>
+							<Pick class="h-6" items={(['T', 'B', 'L', 'R'] as const).map((k) => ({ value: k, label: `+ ${edgeLabel[k]}` }))} value={mod.pos} onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.pos = v as 'T' | 'B' | 'L' | 'R'; })} title="Positive edge" />
+							<Pick class="h-6" items={(['T', 'B', 'L', 'R'] as const).map((k) => ({ value: k, label: `− ${edgeLabel[k]}` }))} value={mod.neg} onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.neg = v as 'T' | 'B' | 'L' | 'R'; })} title="Negative edge" />
 						</div>
 						<NumField label="ramp" value={mod.rate} unit="s" help="Time for the voltage to rise from 0 to peak (and back), as a logistic ramp centred on start / end." onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.rate = v; })} />
 					{:else if mod.kind !== 'cut'}

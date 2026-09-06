@@ -2,7 +2,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { colormapGradient, colormapNames, type ColormapName } from '$lib/viz/colormap';
-	import * as NativeSelect from '$lib/components/ui/native-select';
+	import Pick from './Pick.svelte';
 	import { getView, type RangeSetting } from '$lib/sim/view.svelte';
 	import { fmt } from '$lib/format';
 	const view = getView();
@@ -22,13 +22,7 @@
 		<span>{fmt(range[1], 4)}</span>
 	{/if}
 	<span class="w-8">{unit}</span>
-	<NativeSelect.Root size="sm" class="[&>select]:h-6 [&>select]:py-0 [&>select]:text-xs" value={view.colormap} onchange={(e) => (view.colormap = (e.target as HTMLSelectElement).value as ColormapName)} title="Colour map">
-		{#each colormapNames as c (c)}<NativeSelect.Option value={c}>{c}</NativeSelect.Option>{/each}
-	</NativeSelect.Root>
-	<NativeSelect.Root size="sm" class="[&>select]:h-6 [&>select]:py-0 [&>select]:text-xs" value={view.rangeSetting.mode} onchange={(e) => view.setRange({ mode: (e.target as HTMLSelectElement).value as RangeSetting['mode'] })} title="Colour range: this frame's min/max, the min/max over the run so far, or fixed values (per field)">
-		<NativeSelect.Option value="frame">range: frame</NativeSelect.Option>
-		<NativeSelect.Option value="run">range: run</NativeSelect.Option>
-		<NativeSelect.Option value="fixed">range: fixed</NativeSelect.Option>
-	</NativeSelect.Root>
+	<Pick class="h-6 px-1.5 text-xs" items={colormapNames.map((c) => ({ value: c, label: c }))} value={view.colormap} onchange={(v) => (view.colormap = v as ColormapName)} title="Colour map" />
+	<Pick class="h-6 px-1.5 text-xs" items={[{ value: 'frame', label: 'range: frame' }, { value: 'run', label: 'range: run' }, { value: 'fixed', label: 'range: fixed' }]} value={view.rangeSetting.mode} onchange={(v) => view.setRange({ mode: v as RangeSetting['mode'] })} title="Colour range: this frame's min/max, the min/max over the run so far, or fixed values (per field)" />
 	{#if view.rangeSetting.mode !== 'fixed'}<Button variant="link" size="sm" class="h-5 px-0 font-mono text-xs" onclick={() => view.setRange({ mode: 'fixed', min: +range[0].toPrecision(3), max: +range[1].toPrecision(3) })} title="Freeze the current range as this field's fixed range">freeze</Button>{/if}
 </div>

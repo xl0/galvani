@@ -6,7 +6,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView, type Tool } from '$lib/sim/view.svelte';
-	import * as NativeSelect from '$lib/components/ui/native-select';
+	import Pick from './Pick.svelte';
 	import { channelModels } from '$lib/core/channels';
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
@@ -92,10 +92,7 @@
 		</Button>
 	{/each}
 	{#if view.tool === 'paint'}
-		<NativeSelect.Root size="sm" class="[&>select]:h-7" value={view.activeProfile ?? ''} onchange={(e) => (view.activeProfile = (e.target as HTMLSelectElement).value || null)} title="Region being painted">
-			{#if session.experiment.profiles.length === 0}<NativeSelect.Option value="">no regions yet</NativeSelect.Option>{/if}
-			{#each session.experiment.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
-		</NativeSelect.Root>
+		<Pick items={session.experiment.profiles.map((p) => ({ value: p.id, label: p.name }))} value={view.activeProfile ?? ''} placeholder="no regions yet" onchange={(v) => (view.activeProfile = v || null)} title="Region being painted" />
 	{/if}
 	{#if view.tool !== 'probe'}
 		<Label class="gap-1.5 font-normal text-muted-foreground">brush

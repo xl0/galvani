@@ -171,9 +171,11 @@ BETSE (see PLAN.md, docs/adr/0001).
   native-select, resizable (PaneForge), select, separator, slider, switch,
   tabs, textarea, toggle, toggle-group, tooltip, badge, kbd, alert, table,
   scroll-area, field. Generated code; excluded from formatting via
-  `.prettierignore`. App code defaults to these: NativeSelect for compact
-  selects, Select (popover) in the toolbar, InputGroup for number+unit
-  fields (`NumField`, `BigField`), ToggleGroup for chips, Checkbox + Label.
+  `.prettierignore`. App code defaults to these: the popover Select for
+  every dropdown (`galvani/Pick.svelte` wraps it for flat item lists; the
+  experiment loader uses groups), InputGroup for number+unit fields
+  (`NumField`, `BigField`), ToggleGroup for chips, Checkbox + Label.
+  native-select is installed but unused.
 - BETSE's initial charge balancing (bal_charge) edits cell concentrations but
   not its membrane copy, so the first step uses stale membrane values.
   Fixtures therefore record `cc_at_mem`; Galvani's own `balanceCharge()`
