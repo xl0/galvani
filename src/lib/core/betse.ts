@@ -42,11 +42,11 @@ export interface BetseFixture {
 		gj_block: number[];
 		NaKATP_block: number[];
 		n_steps: number;
-		subs?: Record<string, { cells: number[]; mem: number[]; env: number }>;
+		subs?: Record<string, { cells: number[]; mem: number[]; env: number | number[] }>;
 	};
 	/** extracellular grid geometry when the fixture was exported with --ecm */
 	ecm?: { shape: number[]; delta: number; xmin: number; xmax: number; ymin: number; ymax: number; map_mem2ecm: number[]; map_cell2ecm: number[]; envInds_inClust: number[]; memSa_per_envSquare: number[]; D_env: number[][]; ko_env: number; c_env_bound: number[] } | null;
-	snaps: { step: number; vm: number[]; cc_cells: number[][]; cc_env: number[] | number[][]; gjopen: number[]; v_env?: number[]; E_env_x?: number[]; E_env_y?: number[]; subs?: Record<string, { cells: number[]; mem: number[]; env: number }>; nak_block?: number[] }[];
+	snaps: { step: number; vm: number[]; cc_cells: number[][]; cc_env: number[] | number[][]; gjopen: number[]; v_env?: number[]; E_env_x?: number[]; E_env_y?: number[]; subs?: Record<string, { cells: number[]; mem: number[]; env: number | number[] }>; nak_block?: number[] }[];
 }
 
 export function paramsFromBetse(fx: BetseFixture): Params {
@@ -135,5 +135,7 @@ export function stateFromBetse(fx: BetseFixture, mesh: Mesh, ions: Ion[]): SimSt
 export function ecmFromBetse(fx: BetseFixture, mesh: Mesh, ions: Ion[]): Ecm {
 	const e = fx.ecm!, q = fx.params as Record<string, number>;
 	const tjRel = (fx.params as unknown as { Dtj_rel: Record<string, number> }).Dtj_rel ?? {};
-	return buildEcm(mesh, ions, { gridSize: q.grid_size, tjScale: q.D_tj, adhScale: q.D_adh, tjRel }, [e.xmin, e.xmax, e.ymin, e.ymax], q.cell_height, q.cell_radius, q.T, q.true_cell_size);
+	const g = buildEcm(mesh, ions, { gridSize: q.grid_size, tjScale: q.D_tj, adhScale: q.D_adh, tjRel }, [e.xmin, e.xmax, e.ymin, e.ymax], q.cell_height, q.cell_radius, q.T, q.true_cell_size);
+	g.cBound.set(e.c_env_bound); // BETSE's edge values as they were at the phase start (charge balancing may have shifted them)
+	return g;
 }

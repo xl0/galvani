@@ -42,7 +42,6 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 	const iNa = ions.findIndex((x) => x.name === 'Na');
 	const iK = ions.findIndex((x) => x.name === 'K');
 	const ecm = s.ecm;
-	if (network && ecm) throw new Error('substance networks with extracellular spaces are not supported');
 	if (p.alphaNaK > 0 && iNa >= 0 && iK >= 0) {
 		const atpKm = p.cATP / p.KmNK_ATP;
 		const fNaArr = s.fluxesMem[iNa];

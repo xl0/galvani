@@ -173,7 +173,7 @@ def snap(sim):
         d['Phi_b'] = np.asarray(sim.Phi_b).ravel().tolist() if np.ndim(getattr(sim, 'Phi_b', 0)) else 0.0
         d['bound_V'] = {k: float(v) for k, v in sim.bound_V.items()}
     if getattr(sim, 'molecules', None) is not None:
-        d['subs'] = {name: {'cells': np.asarray(m.c_cells).tolist(), 'mem': np.asarray(m.cc_at_mem).tolist(), 'env': float(np.asarray(m.c_env).ravel()[0])} for name, m in sim.molecules.core.molecules.items()}
+        d['subs'] = {name: {'cells': np.asarray(m.c_cells).tolist(), 'mem': np.asarray(m.cc_at_mem).tolist(), 'env': (np.asarray(m.c_env).ravel().tolist() if args.ecm else float(np.asarray(m.c_env).ravel()[0]))} for name, m in sim.molecules.core.molecules.items()}
         d['nak_block'] = np.asarray(sim.NaKATP_block * np.ones(sim.mdl)).tolist()
     return d
 def check_v_hook(vm):

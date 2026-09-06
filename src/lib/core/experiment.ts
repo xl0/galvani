@@ -65,7 +65,7 @@ const GatingSchema = z.object({
 export const SubstanceSchema = z.object({
 	name: z.string().min(1), z: z.number(), Dm: z.number().nonnegative(), Do: z.number().nonnegative(), Dgj: z.number().nonnegative(),
 	cCell: z.number().nonnegative(), cEnv: z.number().nonnegative(), scale: z.number().optional(), updateIntra: z.boolean().optional(),
-	gjImpermeable: z.boolean().optional(), growth: GrowthSchema.optional(), gating: GatingSchema.optional()
+	gjImpermeable: z.boolean().optional(), tjPermeable: z.boolean().optional(), tjFactor: z.number().nonnegative().optional(), growth: GrowthSchema.optional(), gating: GatingSchema.optional()
 });
 const ReactionSchema = z.object({
 	name: z.string(), reactants: z.array(z.object({ name: z.string(), coeff: z.number(), Km: z.number().positive() })),

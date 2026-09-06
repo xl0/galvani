@@ -10,6 +10,7 @@ import { F, R } from './params';
 import type { SimState } from './state';
 import type { ChannelInstance } from './channels';
 import { ghkFlux, NONCE, UnstableError } from './step';
+import { applyMemFluxToEnv, diffuseGrid } from './ecm';
 
 /** Hill-type regulator: name of a substance or ion, half-max Km [mM], exponent n, which pool to read. */
 export interface Influencer { name: string; Km: number; n: number; zone: 'cell' | 'env' }
@@ -55,6 +56,9 @@ export interface SubstanceConfig {
 	/** track a separate membrane concentration with intracellular diffusion (BETSE 'update intracellular') */
 	updateIntra?: boolean;
 	gjImpermeable?: boolean;
+	/** extracellular grid only: substance crosses tight junctions freely (ignores the junction map) / relative TJ permeability */
+	tjPermeable?: boolean;
+	tjFactor?: number;
 	growth?: GrowthConfig;
 	gating?: GatingConfig;
 }
@@ -89,6 +93,10 @@ export interface NetworkConfig {
 interface Substance {
 	cfg: SubstanceConfig;
 	cCells: Float64Array;
+	/** grid concentration when extracellular spaces are on (then `cEnv` is unused) */
+	cEnvGrid: Float64Array | null;
+	/** edge value held on the grid (BETSE c_bound) */
+	cBound: number;
 	cMem: Float64Array;
 	cEnv: number;
 	/** growth/decay target cells (BETSE growth_targets_cell) */
@@ -136,6 +144,8 @@ export class Network {
 				cCells: new Float64Array(nCells).fill(sc.cCell),
 				cMem: new Float64Array(nMems).fill(sc.cCell),
 				cEnv: sc.cEnv,
+				cEnvGrid: s.ecm ? new Float64Array(s.ecm.grid.nx * s.ecm.grid.ny).fill(sc.cEnv) : null,
+				cBound: sc.cEnv,
 				targets: Int32Array.from(sc.growth && sc.growth.profile !== '' ? (profileCells(sc.growth.profile) ?? []) : Array.from({ length: nCells }, (_, i) => i)),
 				growthAlpha: null, decayAlpha: null, gatingAlpha: null,
 				gatingIons: (sc.gating?.ions ?? []).map((n) => { const i = ions.findIndex((x) => x.name === n); if (i < 0) throw new Error(`gating ion ${n} not in experiment`); return i; }),
@@ -185,22 +195,25 @@ export class Network {
 		}
 	}
 
-	/** substances' charge into state.extraRho (BETSE extra_rho_cells) */
+	/** substances' charge into state.extraRho (BETSE extra_rho_cells) and, with a grid, into the environment charge */
 	private updateCharge(): void {
 		const { s, mesh } = this;
 		s.extraRho.fill(0);
+		s.ecm?.extraRhoEnv.fill(0);
 		if (!this.cfg.affectCharge) return;
 		for (const sub of this.subs) {
 			const zF = sub.cfg.z * F * (sub.cfg.scale ?? 1);
 			for (let c = 0; c < mesh.nCells; c++) s.extraRho[c] += zF * sub.cCells[c];
+			if (s.ecm && sub.cEnvGrid) { const g = s.ecm.extraRhoEnv; for (let k = 0; k < g.length; k++) g[k] += zF * sub.cEnvGrid[k]; }
 		}
 	}
 
-	/** overwrite substance pools (fixture loading) */
-	setConcentrations(name: string, cells: ArrayLike<number>, mem: ArrayLike<number>, env: number): void {
+	/** overwrite substance pools (fixture loading); `env` is a grid when extracellular spaces are on */
+	setConcentrations(name: string, cells: ArrayLike<number>, mem: ArrayLike<number>, env: number | ArrayLike<number>): void {
 		const sub = this.byName.get(name);
 		if (!sub) throw new Error(`unknown substance ${name}`);
-		sub.cCells.set(cells); sub.cMem.set(mem); sub.cEnv = env;
+		sub.cCells.set(cells); sub.cMem.set(mem);
+		if (typeof env === 'number') sub.cEnv = env; else sub.cEnvGrid!.set(env);
 		this.updateCharge();
 	}
 
@@ -211,7 +224,9 @@ export class Network {
 		const iM = this.ions.findIndex((x) => x.name === 'M'), iK = this.ions.findIndex((x) => x.name === 'K'), iNa = this.ions.findIndex((x) => x.name === 'Na');
 		const adjust = (i: number, dq: number) => { for (let c = 0; c < this.mesh.nCells; c++) this.s.ccCells[i][c] -= dq; for (let m = 0; m < this.mesh.nMems; m++) this.s.ccAtMem[i][m] = this.s.ccCells[i][this.mesh.memToCell[m]]; };
 		if (Qc < 0 && iM >= 0) adjust(iM, -Qc); else if (Qc > 0 && iK >= 0) adjust(iK, Qc);
-		if (Qe < 0 && iM >= 0) this.s.ccEnv[iM] -= -Qe; else if (Qe > 0 && iNa >= 0) this.s.ccEnv[iNa] -= Qe;
+		// with a grid the edge (boundary) value is adjusted along with the grid
+		const adjEnv = (i: number, dq: number) => { const e = this.s.ecm; if (e) { const g = e.cc[i]; for (let k = 0; k < g.length; k++) g[k] -= dq; e.grid.cBound[i] -= dq; } else this.s.ccEnv[i] -= dq; };
+		if (Qe < 0 && iM >= 0) adjEnv(iM, -Qe); else if (Qe > 0 && iNa >= 0) adjEnv(iNa, Qe);
 	}
 
 	/** concentration of a named species in a pool: 'cell' = per cell, 'mem' = per membrane, 'env' = bath scalar */
@@ -363,19 +378,20 @@ export class Network {
 		const alpha = sub.gatingAlpha!(this.scratchMems[1]);
 		const RT = R * p.T;
 		const flux = this.scratchMems[2];
+		const e = s.ecm, map = e?.grid.mapMem2Ecm;
 		for (const i of sub.gatingIons) {
 			const z = ions[i].z + NONCE;
 			const cA = s.ccEnv[i];
 			const cc = s.ccCells[i];
 			for (let m = 0; m < mesh.nMems; m++) {
-				const x = g.extracellular ? sub.cEnv : sub.cMem[m];
+				const x = g.extracellular ? (e ? sub.cEnvGrid![map![m]] : sub.cEnv) : sub.cMem[m];
 				const hill = x ** g.HillN / (g.HillK ** g.HillN + x ** g.HillN);
 				const Dchan = g.peak * hill * alpha[m];
 				s.vm[m] += NONCE;
-				flux[m] = ghkFlux(cA, cc[mesh.memToCell[m]], Dchan, p.tm, z, s.vm[m], RT);
+				flux[m] = ghkFlux(e ? e.cc[i][map![m]] : cA, cc[mesh.memToCell[m]], Dchan, p.tm, z, s.vm[m], RT);
 				s.fluxesMem[i][m] += flux[m];
 			}
-			// update_Co on the ion: cells, membranes, bath
+			// update_Co on the ion: cells, membranes, bath (or the grid squares)
 			let envSum = 0;
 			for (let m = 0; m < mesh.nMems; m++) {
 				const c = mesh.memToCell[m];
@@ -383,11 +399,12 @@ export class Network {
 				envSum += (-flux[m] * mesh.memSa[m]) / p.volEnv;
 			}
 			for (let m = 0; m < mesh.nMems; m++) s.ccAtMem[i][m] = cc[mesh.memToCell[m]];
-			s.ccEnv[i] += (envSum / mesh.nMems) * p.dt;
+			if (e) applyMemFluxToEnv(e, i, flux, mesh, p.dt);
+			else s.ccEnv[i] += (envSum / mesh.nMems) * p.dt;
 		}
 	}
 
-	/** BETSE molecule_mover for the ECM-off case */
+	/** BETSE molecule_mover: membrane exchange, gap junctions, and with a grid the environment electrodiffusion */
 	private transport(sub: Substance): void {
 		const { mesh, p, s } = this;
 		const { nMems } = mesh;
@@ -395,9 +412,10 @@ export class Network {
 		const z = sc.z + NONCE;
 		const RT = R * p.T;
 		const fmem = sub.fMem, fgj = sub.fGj;
+		const e = s.ecm, map = e?.grid.mapMem2Ecm, grid = sub.cEnvGrid;
 		// membrane flux (only if permeable), then update_Co(update_at_mems = updateIntra)
 		if (sc.Dm !== 0) {
-			for (let m = 0; m < nMems; m++) { s.vm[m] += NONCE; fmem[m] = ghkFlux(sub.cEnv, sub.cMem[m], sc.Dm, p.tm, z, s.vm[m], RT); }
+			for (let m = 0; m < nMems; m++) { s.vm[m] += NONCE; fmem[m] = ghkFlux(e ? grid![map![m]] : sub.cEnv, sub.cMem[m], sc.Dm, p.tm, z, s.vm[m], RT); }
 		} else fmem.fill(0);
 		let envSum = 0;
 		if (sc.updateIntra) for (let m = 0; m < nMems; m++) sub.cMem[m] += fmem[m] * (mesh.memSa[m] / (0.75 * mesh.memVol[m])) * p.dt;
@@ -407,7 +425,8 @@ export class Network {
 			envSum += (-fmem[m] * mesh.memSa[m]) / p.volEnv;
 		}
 		if (!sc.updateIntra) for (let m = 0; m < nMems; m++) sub.cMem[m] = sub.cCells[mesh.memToCell[m]];
-		sub.cEnv += (envSum / nMems) * p.dt;
+		if (e) { const inv = p.dt / (e.grid.cellHeight * e.grid.delta * e.grid.delta); for (let m = 0; m < nMems; m++) grid![map![m]] -= fmem[m] * mesh.memSa[m] * inv; }
+		else sub.cEnv += (envSum / nMems) * p.dt;
 		// gap junctions
 		if (!sc.gjImpermeable) {
 			for (let m = 0; m < nMems; m++) {
@@ -422,8 +441,38 @@ export class Network {
 			if (sc.updateIntra) for (let m = 0; m < nMems; m++) sub.cMem[m] += -fgj[m] * (mesh.memSa[m] / (0.75 * mesh.memVol[m])) * p.dt;
 			else for (let m = 0; m < nMems; m++) sub.cMem[m] = sub.cCells[mesh.memToCell[m]];
 		} else fgj.fill(0);
+		// extracellular grid: electrodiffuse with Do scaled by the Na+ relative-diffusivity map (junctions), TJ squares × tjFactor
+		if (e && grid) {
+			let any = sub.cBound > 1e-15;
+			if (!any) for (let k = 0; k < grid.length; k++) if (grid[k] !== 0) { any = true; break; }
+			if (any) {
+				const n = grid.length, D = this.scratchEnv(n);
+				if (sc.tjPermeable) D.fill(sc.Do);
+				else {
+					const w = this.envWeight();
+					for (let k = 0; k < n; k++) D[k] = w[k] * sc.Do;
+					const f = sc.tjFactor ?? 1;
+					for (const k of e.grid.tjTargets) D[k] *= f;
+				}
+				diffuseGrid(e, grid, D, sub.cBound, sc.z, p);
+			}
+		}
 		for (let c = 0; c < mesh.nCells; c++) if (sub.cCells[c] < 0) throw new UnstableError(`substance ${sc.name} below zero in a cell`);
 		for (let m = 0; m < nMems; m++) if (sub.cMem[m] < 0) throw new UnstableError(`substance ${sc.name} below zero on a membrane`);
-		if (sub.cEnv < 0) throw new UnstableError(`substance ${sc.name} below zero in the bath`);
+		if (grid) { for (let k = 0; k < grid.length; k++) if (grid[k] < 0) throw new UnstableError(`substance ${sc.name} below zero in the environment`); }
+		else if (sub.cEnv < 0) throw new UnstableError(`substance ${sc.name} below zero in the bath`);
+	}
+
+	private scratchEnvArr: Float64Array | null = null;
+	private scratchEnv(n: number): Float64Array { if (!this.scratchEnvArr || this.scratchEnvArr.length !== n) this.scratchEnvArr = new Float64Array(n); return this.scratchEnvArr; }
+	/** BETSE D_env_weight: the Na+ grid diffusivity relative to its maximum (adherens + tight junction scaling) */
+	private envWeightArr: Float64Array | null = null;
+	private envWeight(): Float64Array {
+		if (this.envWeightArr) return this.envWeightArr;
+		const e = this.s.ecm!;
+		let iNa = this.ions.findIndex((x) => x.name === 'Na'); if (iNa < 0) iNa = 0;
+		const D = e.grid.Denv[iNa]; let mx = 0; for (let k = 0; k < D.length; k++) mx = Math.max(mx, D[k]);
+		this.envWeightArr = Float64Array.from(D, (d) => (mx > 0 ? d / mx : 1));
+		return this.envWeightArr;
 	}
 }

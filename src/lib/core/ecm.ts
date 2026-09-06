@@ -53,6 +53,8 @@ export interface Ecm {
 	/** inverse Debye length of the bath [1/m] and the derived field screening factor */
 	koEnv: number;
 	screen: number;
+	/** squares whose diffusivity tight junctions scale (BETSE TJ_targets) */
+	tjTargets: Int32Array;
 	/** mean membrane area of the squares that membranes map to (BETSE's surface-charge normaliser) */
 	memSaMean: number;
 	T: number;
@@ -71,6 +73,8 @@ export interface EcmState {
 	eEnvY: Float64Array;
 	/** Laplace solution for the edge voltages (zero unless a voltage is applied) */
 	phiB: Float64Array;
+	/** charge density of network substances in the grid [C/m3] (BETSE extra_rho_env) */
+	extraRhoEnv: Float64Array;
 }
 
 export function buildEcm(mesh: Mesh, ions: Ion[], cfg: EcmConfig, bounds: [number, number, number, number], cellHeight: number, cellRadius: number, T: number, trueCellSize = 1e-5): Ecm {
@@ -111,8 +115,10 @@ export function buildEcm(mesh: Mesh, ions: Ion[], cfg: EcmConfig, bounds: [numbe
 	let memSaMean = 0;
 	for (let m = 0; m < mesh.nMems; m++) memSaMean += memSaPerSquare[mapMem2Ecm[m]];
 	memSaMean /= mesh.nMems;
+	const tjTargets: number[] = [];
+	for (let k = 0; k < n; k++) if (tj[k]) tjTargets.push(k);
 	return {
-		nx, ny, delta, xmin, ymin, cellHeight, mapMem2Ecm, mapCell2Ecm, memSaPerSquare, Denv,
+		nx, ny, delta, xmin, ymin, cellHeight, mapMem2Ecm, mapCell2Ecm, memSaPerSquare, Denv, tjTargets: Int32Array.from(tjTargets),
 		cBound: Float64Array.from(ions, (i) => i.cEnv), koEnv, screen: (2 / (koEnv * delta)) * (cellRadius / trueCellSize), memSaMean,
 		T, cellRadius, trueCellSize,
 		boundV: { T: 0, B: 0, L: 0, R: 0 }
@@ -130,7 +136,7 @@ export function setScreening(e: EcmState, ions: Ion[]): void {
 
 export function createEcmState(grid: Ecm, ions: Ion[]): EcmState {
 	const n = grid.nx * grid.ny;
-	return { grid, cc: ions.map((i) => new Float64Array(n).fill(i.cEnv)), vEnv: new Float64Array(n), eEnvX: new Float64Array(n), eEnvY: new Float64Array(n), phiB: new Float64Array(n) };
+	return { grid, cc: ions.map((i) => new Float64Array(n).fill(i.cEnv)), vEnv: new Float64Array(n), eEnvX: new Float64Array(n), eEnvY: new Float64Array(n), phiB: new Float64Array(n), extraRhoEnv: new Float64Array(n) };
 }
 
 // ---- BETSE finitediff replicas (grid F[i * nx + j], i along y) --------------------
@@ -174,7 +180,12 @@ function scratch(n: number): void {
 
 /** BETSE update_ecm: clamp the edges to the bath, electrodiffuse one ion across the grid. */
 export function updateEnvIon(e: EcmState, i: number, z: number, p: Params): void {
-	const { nx, ny, delta } = e.grid, n = nx * ny, c = e.cc[i], D = e.grid.Denv[i], cb = e.grid.cBound[i];
+	diffuseGrid(e, e.cc[i], e.grid.Denv[i], e.grid.cBound[i], z, p);
+}
+
+/** One explicit electrodiffusion step of a grid concentration with diffusivity map D, edges held at cb. */
+export function diffuseGrid(e: EcmState, c: Float64Array, D: ArrayLike<number>, cb: number, z: number, p: Params): void {
+	const { nx, ny, delta } = e.grid, n = nx * ny;
 	scratch(n);
 	for (let i2 = 0; i2 < ny; i2++) { c[i2 * nx] = cb; c[i2 * nx + nx - 1] = cb; }
 	for (let j = 0; j < nx; j++) { c[j] = cb; c[(ny - 1) * nx + j] = cb; }
@@ -197,7 +208,7 @@ export function applyMemFluxToEnv(e: EcmState, i: number, flux: Float64Array, me
 export function updateEnvVoltage(e: EcmState, ions: Ion[], mesh: Mesh): void {
 	const g = e.grid, { nx, ny, delta } = g, n = nx * ny;
 	scratch(n);
-	div.fill(0);
+	div.set(e.extraRhoEnv);
 	for (let i = 0; i < ions.length; i++) { const zF = ions[i].z * F, c = e.cc[i]; for (let k = 0; k < n; k++) div[k] += zF * c[k]; }
 	const surf = (g.cellHeight * delta * delta) / g.memSaMean, cedl = g.koEnv * EPS0 * EPS_R;
 	tmp.fill(0);

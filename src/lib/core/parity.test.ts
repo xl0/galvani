@@ -20,7 +20,8 @@ const cases = [
 	{ name: 'betse-network', twist: 'substance network: growth, reaction, gating, modulator, channel inhibitor' },
 	{ name: 'betse-ecm', twist: 'extracellular spaces: 25x25 environment grid, electrodiffusion, env voltage' },
 	{ name: 'betse-ecm-tj', twist: 'extracellular spaces with tight (0.1) and adherens (0.5) junction scaling' },
-	{ name: 'betse-ecm-volt', twist: 'extracellular spaces, sim phase, 1 mV applied top/bottom (pulse 1.5–3.5 s)' }
+	{ name: 'betse-ecm-volt', twist: 'extracellular spaces, sim phase, 1 mV applied top/bottom (pulse 1.5–3.5 s)' },
+	{ name: 'betse-network-ecm', twist: 'substance network with extracellular spaces (substance grids, gating from the grid, charge in the environment)' }
 ];
 
 describe.each(cases)('BETSE parity: $twist ($name)', ({ name }) => {
@@ -81,7 +82,7 @@ describe.each(cases)('BETSE parity: $twist ($name)', ({ name }) => {
 			if (s.ecm) { for (let i = 0; i < ions.length; i++) worstEnv = Math.max(worstEnv, maxRel(s.ecm.cc[i], snap.cc_env[i] as number[])); worstVenv = Math.max(worstVenv, maxAbs(s.ecm.vEnv, snap.v_env!)); }
 			else worstEnv = Math.max(worstEnv, maxRel(s.ccEnv, snap.cc_env as number[]));
 			worstGj = Math.max(worstGj, maxAbs(s.gjOpen, snap.gjopen));
-			if (net && snap.subs) for (const sub of net.subs) { const ref = snap.subs[sub.cfg.name]; worstSub = Math.max(worstSub, maxAbs(sub.cCells, ref.cells), maxAbs(sub.cMem, ref.mem), Math.abs(sub.cEnv - ref.env)); }
+			if (net && snap.subs) for (const sub of net.subs) { const ref = snap.subs[sub.cfg.name]; worstSub = Math.max(worstSub, maxAbs(sub.cCells, ref.cells), maxAbs(sub.cMem, ref.mem), Array.isArray(ref.env) ? maxAbs(sub.cEnvGrid!, ref.env) : Math.abs(sub.cEnv - ref.env)); }
 		}
 		console.log(`${name}: after ${s.step} steps |dVm| ${worstVm.toExponential(2)} V, rel dcc ${worstCc.toExponential(2)}, rel denv ${worstEnv.toExponential(2)}, |dgj| ${worstGj.toExponential(2)}${net ? `, |dsub| ${worstSub.toExponential(2)} mM` : ''}${s.ecm ? `, |dVenv| ${worstVenv.toExponential(2)} V` : ''}`);
 		if (s.ecm) expect(worstVenv).toBeLessThan(1e-12);
