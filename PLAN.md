@@ -63,6 +63,7 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [x] Learn section: chapters 1–7 (ions, leak/GHK, pump, charge, gates, junction, tissue)
 - [x] Learn chapter 8 (the solver loop and what is not modelled)
 - [x] Learn chapters: morphogens / gene networks, extracellular space
+- [x] Video export of the recorded run (fields as panels, trace strips, speed) via WebCodecs + webm-muxer
 - [ ] Polish: relative (x) controls instead of raw SI, keyboard shortcuts; rerun parity after any step.ts change
 - [x] HH channels (BETSE Na/K families) with parity fixture; initial Vm; excitable preset
 - [x] Ca2+ + Ca-ATPase (basic_Ca profile) with parity fixture; ion-set switch in the Ions dialog

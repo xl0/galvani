@@ -120,6 +120,17 @@ BETSE (see PLAN.md, docs/adr/0001).
   or an uploaded SVG/PNG to a 160² bitmap mask (main thread, canvas).
 - `src/lib/library.ts` — saved experiments in localStorage ("Saved in this browser").
 - `src/lib/export.ts` — trace CSV download, experiment JSON download / file import.
+- `src/lib/viz/fields.ts` (`fieldValues` of a snapshot for any display field, units,
+  labels) and `viz/render.ts` (`drawCluster` = heatmap/bath tint + cells + membranes
+  + regions + scale bar, `drawColorbar`, `drawTraceStrip`; pure, canvas- or
+  OffscreenCanvas-context) are shared by `ClusterView` and the video exporter.
+- `src/lib/video.ts` — `renderVideo(session, opts)`: recorded frames → WebM (VP9 via
+  WebCodecs `VideoEncoder`, muxed by `webm-muxer`). Layout: one panel + colour bar
+  per selected field (≤3 per row), trace strips (per probe, bath dashed) below,
+  time and experiment name in the footer. Speed = sim seconds per video second;
+  frames repeat the latest recorded snapshot. Colour range over the run or per
+  frame. `VideoDialog.svelte` (toolbar clapperboard) picks fields, traces, speed,
+  width, fps; requires WebCodecs.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
 - `src/lib/components/galvani/` — `Workbench` (owns session/view; header row + a horizontal Resizable PaneGroup: settings | canvas+playback+colorbar | traces; side panes collapsible by drag or `[` `]`, layout saved under `autoSaveId`),
