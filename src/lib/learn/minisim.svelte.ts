@@ -8,6 +8,9 @@ import type { Mesh } from '$lib/core/mesh';
 import type { Ion, Params } from '$lib/core/params';
 import { createState, updateV, type SimState } from '$lib/core/state';
 import { step, UnstableError } from '$lib/core/step';
+import { Network, type NetworkConfig } from '$lib/core/network';
+import { buildEcm, createEcmState, setScreening, type EcmConfig } from '$lib/core/ecm';
+import { defaultGenerator } from '$lib/core/generator';
 
 export interface MiniSimOptions {
 	mesh: Mesh;
@@ -15,6 +18,11 @@ export interface MiniSimOptions {
 	params?: Partial<Params>;
 	initialVm?: number;
 	channels?: { type: string; maxDm: number }[];
+	/** substance network and the named cell sets it may target */
+	network?: NetworkConfig;
+	profiles?: Record<string, number[]>;
+	/** extracellular grid instead of the well-mixed bath */
+	ecm?: EcmConfig;
 	/** simulated seconds advanced per real second */
 	speed?: number;
 	/** keep this many trace samples (oldest dropped) */
@@ -27,8 +35,9 @@ export class MiniSim {
 	mesh: Mesh;
 	ions: Ion[];
 	params: Params;
-	state: SimState;
+	state!: SimState;
 	channels: ChannelInstance[] = [];
+	network: Network | null = null;
 	running = $state(false);
 	t = $state(0);
 	/** cell-average Vm [mV] per cell, refreshed each frame */
@@ -38,6 +47,11 @@ export class MiniSim {
 	ccEnv = $state.raw<Float64Array>(new Float64Array(0));
 	/** open fraction per channel (cell 0) */
 	open = $state.raw<number[]>([]);
+	/** network substance concentrations per cell [mM], in `subNames` order */
+	subs = $state.raw<Float64Array[]>([]);
+	subNames: string[] = [];
+	/** extracellular grid: per-ion concentrations and voltage, or null */
+	env = $state.raw<{ nx: number; ny: number; xmin: number; ymin: number; delta: number; cc: Float64Array[]; v: Float64Array } | null>(null);
 	trace = { t: [] as number[], vm: [] as number[][], cc: [] as number[][][], open: [] as number[][] };
 	traceVersion = $state(0);
 	error = $state<string | null>(null);
@@ -54,17 +68,34 @@ export class MiniSim {
 		this.mesh = opts.mesh;
 		this.ions = structuredClone(opts.ions ?? basicIons);
 		this.params = { ...basicParams, ...opts.params };
-		this.state = createState(this.mesh, this.ions, opts.initialVm ?? 0, this.params.cm);
-		updateV(this.mesh, this.ions, this.params, this.state);
-		this.channels = (opts.channels ?? []).map((c, k) => createChannel(`c${k}`, c.type, c.maxDm, this.ions, this.state.vm));
+		this.build();
 		this.publish();
 	}
 
+	private build(): void {
+		const opts = this.opts;
+		this.state = createState(this.mesh, this.ions, opts.initialVm ?? 0, this.params.cm);
+		if (opts.ecm) {
+			let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+			for (let i = 0; i < this.mesh.verts.length; i += 2) { xmin = Math.min(xmin, this.mesh.verts[i]); xmax = Math.max(xmax, this.mesh.verts[i]); ymin = Math.min(ymin, this.mesh.verts[i + 1]); ymax = Math.max(ymax, this.mesh.verts[i + 1]); }
+			const pad = 3 * defaultGenerator.cellRadius;
+			const es = createEcmState(buildEcm(this.mesh, this.ions, opts.ecm, [xmin - pad, xmax + pad, ymin - pad, ymax + pad], defaultGenerator.cellHeight, defaultGenerator.cellRadius, this.params.T), this.ions);
+			setScreening(es, this.ions);
+			this.state.ecm = es;
+		}
+		this.network = opts.network ? new Network(opts.network, this.mesh, this.ions, this.params, this.state, (id) => opts.profiles?.[id] ?? null) : null;
+		this.network?.balanceCharge();
+		this.subNames = this.network ? this.network.subs.map((x) => x.cfg.name) : [];
+		updateV(this.mesh, this.ions, this.params, this.state);
+		this.channels = (opts.channels ?? []).map((c, k) => createChannel(`c${k}`, c.type, c.maxDm, this.ions, this.state.vm));
+	}
+
+	/** change construction options (ions, network, grid…) and start over */
+	rebuild(patch: Partial<MiniSimOptions>): void { Object.assign(this.opts, patch); this.reset(); }
+
 	reset(): void {
 		this.pause();
-		this.state = createState(this.mesh, this.ions, this.opts.initialVm ?? 0, this.params.cm);
-		updateV(this.mesh, this.ions, this.params, this.state);
-		this.channels = (this.opts.channels ?? []).map((c, k) => createChannel(`c${k}`, c.type, c.maxDm, this.ions, this.state.vm));
+		this.build();
 		this.trace = { t: [], vm: [], cc: [], open: [] };
 		this.error = null;
 		this.perm = null;
@@ -97,7 +128,7 @@ export class MiniSim {
 			this.perm = null;
 		}
 		try {
-			step(this.mesh, this.ions, this.params, this.state, this.channels);
+			step(this.mesh, this.ions, this.params, this.state, this.channels, this.network);
 		} catch (e) {
 			this.error = e instanceof UnstableError ? e.message : String(e);
 			this.pause();
@@ -151,6 +182,9 @@ export class MiniSim {
 		this.cc = this.state.ccCells.map((a) => Float64Array.from(a));
 		this.ccEnv = Float64Array.from(this.state.ccEnv);
 		this.open = this.channels.map((c) => c.P[0]);
+		this.subs = this.network ? this.network.subs.map((x) => Float64Array.from(x.cCells)) : [];
+		const e = this.state.ecm;
+		this.env = e ? { nx: e.grid.nx, ny: e.grid.ny, xmin: e.grid.xmin, ymin: e.grid.ymin, delta: e.grid.delta, cc: e.cc.map((a) => Float64Array.from(a)), v: Float64Array.from(e.vEnv) } : null;
 		this.traceVersion++;
 	}
 }

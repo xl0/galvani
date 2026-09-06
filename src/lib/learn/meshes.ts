@@ -22,6 +22,11 @@ export function twoCells(): Mesh {
 	return generateMesh({ ...base, worldSize: worldFor(4), mask: { kind: 'rect', w: 4.2 * r, h: 1.2 * r } });
 }
 
+/** a small disc of cells, radius r [m] */
+export function disc(r: number): Mesh {
+	return generateMesh({ ...base, worldSize: worldFor(Math.ceil(r / dy) * 2 + 4), mask: { kind: 'circle', radius: r } });
+}
+
 /** n cells in a single row */
 export function strip(n: number): Mesh {
 	const W = Math.max(worldFor(4), 2 * dy * Math.ceil((n + 4) * 2 * r / (2 * dy)));

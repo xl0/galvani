@@ -156,8 +156,10 @@ BETSE (see PLAN.md, docs/adr/0001).
   The network is edited as JSON in its dialog (validated by `NetworkSchema`).
   In dev, `window.galvani = { session, view }` for console poking.
 - `src/routes/+layout.ts` — SPA (`ssr = false`), prerendered shell.
-- `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": eight
-  chapters (the eighth describes the step loop and the model's limits) (`chapters/*.svelte`, registry in `index.ts`), each prose + a live
+- `src/routes/learn/[slug]` + `src/lib/learn/` — "How the model works": ten
+  chapters (8 morphogens / gene networks with a live network on a strip, 9
+  the extracellular grid with tight junctions and an applied voltage, 10 the
+  step loop and the model's limits) (`chapters/*.svelte`, registry in `index.ts`), each prose + a live
   demo and a static SVG figure (`figures/Fig*.svelte`; SVG text needs
   `fill="currentColor"`, arrowheads use `fill="context-stroke"`). Prose is
   pitched at a rusty biology bachelor: technical terms, reminded on first
@@ -165,7 +167,9 @@ BETSE (see PLAN.md, docs/adr/0001).
   cells (timer-driven, speed = sim s per real s, permeability-pulse
   `stimulate()`); `meshes.ts` builds one cell / two cells / a strip; the
   `components/learn/` set is `Lesson` (two-column layout), `Eq` (KaTeX, display/inline), `MiniChart`,
-  `MiniCluster`, `Slider`.
+  `MiniCluster` (optional env-grid heatmap behind the cells), `Slider`.
+  `MiniSim` also takes a network (+ profiles) and an `ecm` config, exposes
+  `subs` / `env`, and `rebuild()` re-creates the sim with changed options.
 - `src/lib/components/ui/` — shadcn-svelte components (style "nova", zinc,
   radius small): button, checkbox, dialog, input, input-group, label,
   native-select, resizable (PaneForge), select, separator, slider, switch,

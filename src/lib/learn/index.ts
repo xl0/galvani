@@ -7,6 +7,8 @@ import Gates from './chapters/Gates.svelte';
 import Junction from './chapters/Junction.svelte';
 import Tissue from './chapters/Tissue.svelte';
 import Solver from './chapters/Solver.svelte';
+import Morphogen from './chapters/Morphogen.svelte';
+import Ecm from './chapters/Ecm.svelte';
 
 export interface Chapter { slug: string; title: string; short: string; component: Component }
 
@@ -18,5 +20,7 @@ export const chapters: Chapter[] = [
 	{ slug: 'gates', title: 'Gates: how a cell fires', short: 'Gates', component: Gates },
 	{ slug: 'junction', title: 'Two cells and a gap junction', short: 'Gap junctions', component: Junction },
 	{ slug: 'tissue', title: 'A tissue: waves and regions', short: 'Tissue', component: Tissue },
+	{ slug: 'morphogens', title: 'Morphogens and gene networks', short: 'Morphogens', component: Morphogen },
+	{ slug: 'extracellular', title: 'The extracellular space', short: 'Extracellular space', component: Ecm },
 	{ slug: 'solver', title: 'What the simulator does each step', short: 'The solver', component: Solver }
 ];

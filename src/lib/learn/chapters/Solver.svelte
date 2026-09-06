@@ -3,7 +3,7 @@
 	import FigSolver from '$lib/learn/figures/FigSolver.svelte';
 </script>
 
-<Lesson title="8 · What the simulator does each step">
+<Lesson title="10 · What the simulator does each step">
 	<p>Everything in the earlier chapters is computed by one loop, repeated thousands of times. Knowing its order tells you what the numbers mean, what the time step buys you, and where the model's scope ends.</p>
 	<h3>State</h3>
 	<p>The cluster is a list of cells and a list of membrane segments. Per cell: the concentration of every ion and every substance. Per membrane segment: the voltage, the permeability to each ion, the gap-junction open fraction, the channel gating variables. The extracellular bath is a single well-mixed compartment. That is the entire state; fields, currents and "the tissue" are derived from it.</p>
