@@ -23,13 +23,13 @@
 	<p>Each quantity advances by rate × dt using the values at the start of the step. That is the simplest explicit scheme and it is what BETSE does, so results can be compared number for number. The price is a stability limit: the fastest process in the system bounds the usable dt. The membrane voltage is the fastest. With default permeabilities 10 ms is fine; with a strong Na⁺ conductance you need 0.1 ms, which is why the excitable presets run slowly. If a run diverges, the simulator stops and reports it; halve dt.</p>
 	<h3>What is not in the model</h3>
 	<ul>
-		<li><b>Extracellular space.</b> The bath has no geometry, so there are no extracellular potential gradients, no ephaptic coupling and no externally applied fields. BETSE has an optional extracellular grid; it is not ported.</li>
+		<li><b>Extracellular space.</b> By default the bath is one stirred compartment with no geometry: no extracellular potential gradients, no applied fields. Switching on "Extracellular space" in the workbench replaces it with BETSE's environment grid (electrodiffusion, environmental voltage, tight junctions, edge voltages), at extra cost per step.</li>
 		<li><b>Intracellular space.</b> A cell is one concentration (optionally a membrane-side copy for substances). No organelles, no ER calcium store, no diffusion within the cytosol.</li>
 		<li><b>Mechanics.</b> No osmotic volume change, flow or deformation.</li>
 		<li><b>Cable effects.</b> V<sub>m</sub> is uniform over a cell's membrane; the per-segment values differ only at the round-off level of how charge is attributed.</li>
 	</ul>
 	<h3>How you know it is right</h3>
-	<p>Five reference runs exported from BETSE (plain cluster, Na⁺/K⁺ channels, calcium, calcium channels, a substance network) are replayed by this code in the test suite, and the trajectories agree to about 10⁻¹² V and 10⁻¹³ mM over 450 steps: round-off, not modelling error. Where the model deliberately diverges from BETSE (the bath, the extracellular grid), the tests say so by not covering it.</p>
+	<p>Eight reference runs exported from BETSE (plain cluster, Na⁺/K⁺ channels, calcium, calcium channels, a substance network, and three with extracellular spaces including junction scaling and an applied edge voltage) are replayed by this code in the test suite, and the trajectories agree to about 10⁻¹² V and 10⁻¹³ mM over 450 steps: round-off, not modelling error.</p>
 	{#snippet demo()}
 		<div class="text-base leading-relaxed">
 			<div class="mb-2 font-semibold">Step loop</div>

@@ -12,6 +12,7 @@
 	import type { Mask } from '$lib/core/generator';
 	import { channelModels, channelTypes } from '$lib/core/channels';
 	import { fmt } from '$lib/format';
+	import { defaultEcm } from '$lib/core/ecm';
 	import BigField from './BigField.svelte';
 	import NumField from './NumField.svelte';
 	import SettingsDialog from './SettingsDialog.svelte';
@@ -19,6 +20,7 @@
 	import * as NativeSelect from '$lib/components/ui/native-select';
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -77,6 +79,7 @@
 			if (kind === 'cut') e.modifiers.push({ kind, ...base, t: Math.ceil(session.view?.t ?? 0) + 1 });
 			else if (kind === 'perm') e.modifiers.push({ kind, ion: 'Na', factor: 20, ...base });
 			else if (kind === 'bath') e.modifiers.push({ kind, ion: 'K', factor: 4, ...base, t: Math.ceil(session.view?.t ?? 0) + 1 });
+			else if (kind === 'voltage') e.modifiers.push({ kind, peak: 1e-3, pos: 'T', neg: 'B', rate: 0.25, ...base, t: Math.ceil(session.view?.t ?? 0) + 1, tEnd: Math.ceil(session.view?.t ?? 0) + 5 });
 			else e.modifiers.push({ kind, factor: 0, ...base });
 		});
 	}
@@ -128,7 +131,8 @@
 		if (!n || n.substances.length === 0) return 'none';
 		return `${n.substances.map((s) => s.name).join(', ')}${n.reactions.length ? ` · ${n.reactions.length} reaction${n.reactions.length > 1 ? 's' : ''}` : ''}${n.modulators.length ? ` · ${n.modulators.length} modulator${n.modulators.length > 1 ? 's' : ''}` : ''}`;
 	});
-	const modLabel: Record<Modifier['kind'], string> = { perm: 'permeability', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells', bath: 'bath' };
+	const modLabel: Record<Modifier['kind'], string> = { perm: 'permeability', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells', bath: 'bath', voltage: 'edge voltage' };
+	const edgeLabel: Record<'T' | 'B' | 'L' | 'R', string> = { T: 'top', B: 'bottom', L: 'left', R: 'right' };
 </script>
 
 <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto">
@@ -217,7 +221,7 @@
 			<h4>How voltage arises</h4>
 			<p>There is no cable equation. Each cell's net charge is the sum over ions of <code>z·F·c</code>. That charge is treated as sitting on the membrane, and each membrane segment's voltage is <code>Vm = σ / Cm</code>, with σ the charge per membrane area. So Vm follows the concentrations directly, and capacitance sets the gain.</p>
 			<h4>The bath</h4>
-			<p>Outside the cells is a single stirred compartment. Fluxes out of cells raise its concentrations by (flux × membrane area / bath volume). A future version adds a spatial extracellular grid.</p>
+			<p>Outside the cells is a single stirred compartment. Fluxes out of cells raise its concentrations by (flux × membrane area / bath volume). Switch on "Extracellular space" for a spatial grid instead.</p>
 		{/snippet}
 	</SettingsDialog>
 
@@ -326,6 +330,37 @@
 		{/snippet}
 	</SettingsDialog>
 
+	<SettingsDialog title="Extracellular space" blurb="Replace the well-mixed bath with a spatial extracellular grid: ions diffuse and drift in the space between and around cells, the environment has its own voltage, and a voltage can be applied across the world (BETSE's ‘simulate extracellular spaces’).">
+		{#snippet summary()}{#if !ex.ecm}off (well-mixed bath){:else}grid {ex.ecm.gridSize}² · tight junctions ×{fmt(ex.ecm.tjScale, 2)} · adherens ×{fmt(ex.ecm.adhScale, 2)}{/if}{/snippet}
+		{#snippet form()}
+			<Label class="gap-3 py-2"><Checkbox checked={!!ex.ecm} onCheckedChange={(v) => set((x) => (x.ecm = v === true ? { ...defaultEcm } : null))} /><span><span class="text-sm font-medium">Simulate extracellular spaces</span><br /><span class="text-sm font-normal text-muted-foreground">Rebuilds the run. The canvas then shows the environment as a heatmap behind the cells; probe it by hovering. Not available together with a substance network yet.</span></span></Label>
+			{#if ex.ecm}
+				{@const c = ex.ecm}
+				<BigField label="Grid size" value={c.gridSize} step={1} min={10} description="Squares per side of the environment grid over the cluster's bounding box. BETSE default 25; cost grows with the square. Each membrane and cell centre maps to its nearest square." onchange={(v) => set((x) => (x.ecm!.gridSize = Math.round(v)))} />
+				<BigField label="Tight junctions" value={c.tjScale} description="Factor on free diffusion in the squares around the cluster boundary (the outermost cells and their neighbours). 1 = no barrier; 0.05 = tight epithelium that keeps its own extracellular composition." onchange={(v) => set((x) => (x.ecm!.tjScale = v))} />
+				<BigField label="Adherens junctions" value={c.adhScale} description="Factor on free diffusion in the squares between cells inside the cluster (the narrow clefts). 1 = free solution." onchange={(v) => set((x) => (x.ecm!.adhScale = v))} />
+				<div class="grid grid-cols-[10rem_1fr] items-start gap-x-3 gap-y-0.5 py-2">
+					<span class="pt-1.5 text-sm font-medium">Per-ion tight junction</span>
+					<div class="flex flex-wrap gap-2">
+						{#each ex.ions as ion (ion.name)}
+							<NumField label={ion.name} value={c.tjRel[ion.name]} placeholder="1" help="Relative tight-junction permeability for {ion.name} (multiplies the scaling above)" onchange={(v) => set((x) => (x.ecm!.tjRel[ion.name] = v))} onclear={() => set((x) => { delete x.ecm!.tjRel[ion.name]; })} />
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/snippet}
+		{#snippet explain()}
+			<h4>What changes</h4>
+			<p>Without this, the bath is one stirred compartment: every membrane sees the same outside concentration, and "outside" has no voltage. With it, the world is a square grid. Membrane fluxes enter the grid square their membrane maps to; from there ions electrodiffuse across the grid (Nernst–Planck: down their gradient and along the environmental field), and the four world edges are held at the bath composition every step, so the far field is the reservoir.</p>
+			<h4>Environmental voltage</h4>
+			<p>The net charge of the squares touching membranes is treated as a screened surface charge (Debye length of the bath), converted to a voltage, smoothed, and added to the solution of Laplace's equation for any voltage applied at the world edges. Its gradient drives the drift term, and the applied part offsets every membrane's voltage. This is what "apply external voltage" modifiers act on.</p>
+			<h4>Junctions</h4>
+			<p>Tight junctions seal the paracellular path at the cluster boundary; adherens junctions narrow it inside. Both are modelled as scaled diffusivity in the affected grid squares, as in BETSE. With tight junctions at 0.05 the cluster keeps its own extracellular composition while cells pump.</p>
+			<h4>Parity</h4>
+			<p>Three BETSE reference runs (plain grid, tight + adherens junction scaling, 1 mV applied top/bottom) agree with this code to about 10⁻¹⁴ V in the environment and 10⁻¹² V in Vm over 450 steps, finite-difference quirks included.</p>
+		{/snippet}
+	</SettingsDialog>
+
 	<SettingsDialog title="Ion channels" blurb="Voltage-gated channels open and close with Vm, changing an ion's permeability on the fly. This is what makes the tissue excitable.">
 		{#snippet summary()}
 			{#if ex.channels.length === 0}none{:else}{ex.channels.filter((c) => c.enabled).map((c) => `${channelModels[c.type]?.label ?? c.type} ${fmt(c.maxDm, 2)}`).join(' · ')}{/if}
@@ -426,6 +461,7 @@
 			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('gj')} title="Scale gap-junction coupling">+GJ</Button>
 			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('cut')} disabled={ex.profiles.length === 0} title="Remove a region's cells at a given time (needs a region)">+cut</Button>
 			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('bath')} title="Hold an ion's bath concentration at a value (restored afterwards)">+bath</Button>
+			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('voltage')} disabled={!ex.ecm} title="Apply a voltage between two edges of the extracellular space (needs extracellular spaces on)">+voltage</Button>
 		</div>
 		<div class="mt-1 text-sm text-muted-foreground">Changes to membrane properties of a region (or all cells), from a start time until an end time. Leave the end blank for permanent. Pump and junction factors multiply; permeability is set to a value or scaled by a factor.</div>
 		{#each ex.modifiers as mod, i (i)}
@@ -438,8 +474,8 @@
 							{#each ex.ions as ion (ion.name)}<NativeSelect.Option value={ion.name}>{ion.name}</NativeSelect.Option>{/each}
 						</NativeSelect.Root>
 					{/if}
-					{#if mod.kind === 'bath'}
-						<span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">whole bath</span>
+					{#if mod.kind === 'bath' || mod.kind === 'voltage'}
+						<span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">{mod.kind === 'bath' ? (ex.ecm ? 'world edges' : 'whole bath') : 'extracellular space'}</span>
 					{:else}
 						<NativeSelect.Root size="sm" class="min-w-0 flex-1" value={mod.profile} onchange={(e) => set((x) => (x.modifiers[i].profile = (e.target as HTMLSelectElement).value))}>
 							{#if mod.kind !== 'cut'}<NativeSelect.Option value="">all cells</NativeSelect.Option>{/if}
@@ -464,8 +500,20 @@
 								<NumField label="" value={mod.factor ?? 1} step={0.1} min={0} help="Multiplier on the experiment's {mod.kind === 'perm' ? 'permeability to' : 'bath concentration of'} {mod.ion} while active" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.factor = v; })} />
 							{/if}
 						</div>
+					{:else if mod.kind === 'voltage'}
+						<NumField label="peak" value={mod.peak} scale={1e3} unit="mV" help="Voltage applied at the positive edge; the negative edge gets minus this. BETSE demo uses 1 mV." onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.peak = v; })} />
+						<div class="flex items-center gap-1.5 text-sm">
+							<span class="w-20 shrink-0 text-muted-foreground">edges</span>
+							<NativeSelect.Root size="sm" value={mod.pos} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.pos = (e.target as HTMLSelectElement).value as 'T' | 'B' | 'L' | 'R'; })} title="Positive edge">
+								{#each ['T', 'B', 'L', 'R'] as k (k)}<NativeSelect.Option value={k}>+ {edgeLabel[k as 'T']}</NativeSelect.Option>{/each}
+							</NativeSelect.Root>
+							<NativeSelect.Root size="sm" value={mod.neg} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.neg = (e.target as HTMLSelectElement).value as 'T' | 'B' | 'L' | 'R'; })} title="Negative edge">
+								{#each ['T', 'B', 'L', 'R'] as k (k)}<NativeSelect.Option value={k}>− {edgeLabel[k as 'T']}</NativeSelect.Option>{/each}
+							</NativeSelect.Root>
+						</div>
+						<NumField label="ramp" value={mod.rate} unit="s" help="Time for the voltage to rise from 0 to peak (and back), as a logistic ramp centred on start / end." onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'voltage') y.rate = v; })} />
 					{:else if mod.kind !== 'cut'}
-						<NumField label="factor ×" value={mod.factor} step={0.1} min={0} help={mod.kind === 'pump' ? 'Multiplier on the Na/K pump rate. 0 = no pump.' : 'Multiplier on gap-junction conductance. 0 = isolated cells.'} onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'cut' && y.kind !== 'perm') y.factor = v; })} />
+						<NumField label="factor ×" value={mod.factor} step={0.1} min={0} help={mod.kind === 'pump' ? 'Multiplier on the Na/K pump rate. 0 = no pump.' : 'Multiplier on gap-junction conductance. 0 = isolated cells.'} onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'pump' || y.kind === 'gj') y.factor = v; })} />
 					{/if}
 					<NumField label={mod.kind === 'cut' ? 'at' : 'start'} value={mod.t} unit="s" onchange={(v) => set((x) => (x.modifiers[i].t = v))} />
 					{#if mod.kind !== 'cut'}

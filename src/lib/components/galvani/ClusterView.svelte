@@ -22,6 +22,8 @@
 		const g = session.geom;
 		if (!g) return null;
 		const f = view.field;
+		// environment voltage: the grid is the field; cells carry no value (drawn neutral)
+		if (f === 'venv') return membranes ? null : s.env ? Float32Array.from(s.env.v, (v) => v * 1e3) : null;
 		if (membranes) return f === 'vm' ? Float32Array.from(s.vm, (v) => v * 1e3) : f.startsWith('P:') ? (s.channels.find((ch) => ch.id === f.slice(2))?.P ?? null) : f === 'gj' ? s.gjOpen : f === 'pump' ? s.pump : f === 'imem' ? s.iMem : null;
 		const out = new Float32Array(g.nCells);
 		if (f === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
@@ -143,7 +145,24 @@
 		// the bath: everything outside the cluster, tinted by the ion's bath concentration
 		const bi = session.experiment.ions.findIndex((x) => x.name === view.field);
 		const bsub = view.field.startsWith('S:') ? session.view?.subs.find((x) => x.name === view.field.slice(2)) : undefined;
-		const bathVal = bi >= 0 && session.view ? session.view.ccEnv[bi] : bsub ? bsub.env : null;
+		const env = session.view?.env ?? null;
+		const bathVal = env ? null : bi >= 0 && session.view ? session.view.ccEnv[bi] : bsub ? bsub.env : null;
+		if (env && (bi >= 0 || view.field === 'vm' || view.field === 'venv')) {
+			// extracellular grid as a heatmap on the field's own scale (voltage in mV, ions in mM)
+			const n = env.nx * env.ny, off = bi >= 0 ? bi * n : 0;
+			const px = env.delta * scale + 0.5;
+			ctx.globalAlpha = 0.55;
+			for (let i = 0; i < env.ny; i++) {
+				for (let j = 0; j < env.nx; j++) {
+					const k = i * env.nx + j;
+					const v = bi >= 0 ? env.cc[off + k] : env.v[k] * 1e3;
+					const t = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+					ctx.fillStyle = lut[Math.round(t * 255)];
+					ctx.fillRect(toX(env.xmin + j * env.delta), toY(env.ymin + (i + 1) * env.delta), px, px);
+				}
+			}
+			ctx.globalAlpha = 1;
+		}
 		if (bathVal !== null) {
 			const t = Math.min(1, Math.max(0, (bathVal - lo) / (hi - lo)));
 			ctx.globalAlpha = 0.35;
@@ -152,6 +171,7 @@
 			ctx.globalAlpha = 1;
 		}
 		ctx.lineWidth = Math.max(0.5, scale * 2e-7);
+		const neutralCells = view.field === 'venv';
 		for (let c = 0; c < g.nCells; c++) {
 			const a = g.vertStart[c], b = g.vertStart[c + 1];
 			ctx.beginPath();
@@ -160,7 +180,7 @@
 			ctx.closePath();
 			const v = values ? values[c] : NaN;
 			const t = Number.isFinite(v) ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : 0;
-			ctx.fillStyle = values ? lut[Math.round(t * 255)] : css('--muted');
+			ctx.fillStyle = values && !neutralCells ? lut[Math.round(t * 255)] : css('--muted');
 			ctx.fill();
 			ctx.strokeStyle = border;
 			ctx.stroke();
@@ -322,6 +342,8 @@
 			return;
 		}
 		view.hover = cellAt(sx, sy);
+		const env = session.view?.env;
+		if (env) { const { fromX, fromY } = xform(); const j = Math.floor((fromX(sx) - env.xmin) / env.delta), i = Math.floor((fromY(sy) - env.ymin) / env.delta); hoverEnv = j >= 0 && j < env.nx && i >= 0 && i < env.ny ? i * env.nx + j : null; }
 		if (dragging && view.tool !== 'probe') applyTool(sx, sy, erasing);
 	}
 	function onPointerUp() { dragging = false; panning = null; }
@@ -344,9 +366,17 @@
 		const subs = s.subs.map((x) => `${x.name} ${x.cells[c].toPrecision(3)}`).join('  ');
 		return `cell ${c}  Vm ${(s.vmAve[c] * 1e3).toFixed(2)} mV  ${ions}${subs ? '  ' + subs : ''}`;
 	});
+	/** extracellular grid square under the pointer (ECM only) */
+	let hoverEnv = $state<number | null>(null);
 	const bathInfo = $derived.by(() => {
 		const s = session.view;
 		if (!s) return '';
+		if (s.env) {
+			const k = hoverEnv;
+			if (k === null) return 'extracellular grid: hover to read';
+			const n = s.env.nx * s.env.ny;
+			return `env square ${k}  V ${(s.env.v[k] * 1e3).toFixed(3)} mV  ` + session.experiment.ions.map((ion, i) => `${ion.name} ${fmt(s.env!.cc[i * n + k], 6)}`).join('  ') + ' mM';
+		}
 		return 'bath  ' + session.experiment.ions.map((ion, i) => `${ion.name} ${fmt(s.ccEnv[i], 8)}`).join('  ') + ' mM';
 	});
 </script>

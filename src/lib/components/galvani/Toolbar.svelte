@@ -28,6 +28,7 @@
 	const fields = $derived([
 		{ value: 'vm', label: 'Vm' },
 		...session.experiment.ions.map((i) => ({ value: i.name, label: `[${i.name}]` })),
+		...(session.view?.env ? [{ value: 'venv', label: 'V env' }] : []),
 		{ value: 'gj', label: 'GJ open' },
 		{ value: 'pump', label: 'pump rate' },
 		{ value: 'imem', label: 'membrane current' },

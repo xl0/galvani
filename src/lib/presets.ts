@@ -1,4 +1,5 @@
 import { baseExperiment, type Experiment } from './core/experiment';
+import { defaultEcm } from './core/ecm';
 import { generateMesh } from './core/generator';
 
 /** Cells within radius r [m] of world point (x, y) for the experiment's generator. */
@@ -115,6 +116,19 @@ export const presets: Preset[] = [
 				modulators: [],
 				affectCharge: true
 			};
+			return e;
+		}
+	},
+	{
+		id: 'field',
+		name: 'Applied field',
+		blurb: 'Extracellular spaces on: the environment is a grid with its own voltage. From 1 to 3 s a 1 mV voltage is applied between the top and bottom edges (BETSE\'s external-voltage demo); watch the environment voltage and the cells\' Vm respond.',
+		make: () => {
+			const e = structuredClone(baseExperiment);
+			e.name = 'Applied field';
+			e.endTime = 5;
+			e.ecm = { ...defaultEcm, tjRel: {} };
+			e.modifiers = [{ kind: 'voltage', peak: 1e-3, pos: 'T', neg: 'B', rate: 0.25, profile: '', t: 1, tEnd: 3, enabled: true }];
 			return e;
 		}
 	},

@@ -16,7 +16,7 @@ Validated against BETSE (venv at /home/xl0/pi-qa, source ~/.cache/checkouts/gith
    - [x] v1 physics: Na/K-ATPase + GHK membrane flux, ions Na/K/P/M ('basic'), GJ w/ Harris gating.
          Phase 2: HH channels, Ca. Later: networks/GRN. Never (unless asked): flow, deformation
    - [x] Forward Euler, same dt as BETSE (parity). Step designed so a split integrator can be swapped in later
-   - [x] v1 env: well-mixed bath, fixed concs (BETSE 'simulate extracellular spaces: false'). Grid = phase 2+
+   - [x] env: well-mixed bath by default; BETSE's extracellular grid as an option
 3. Architecture
    - [x] Core: TypeScript on typed arrays; WebGPU only on measured need
    - [x] Sim in Web Worker; typed-array snapshots to UI at display rate
@@ -73,4 +73,4 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - ER calcium: skipped for v1. BETSE's `Ca_dyn` is dead code (hard-coded False, `EndoRetic` references undefined parameters), so there is nothing to reproduce. An own CICR model was built and reverted (commit b4ef755): its tuned constants were ~10× off Li–Rinzel-family values and waves needed a 10× junction boost because real waves are IP3-carried (P_Ca ≈ 0.01 P_IP3). If revisited: Li–Rinzel gating with a physical 0.5 mM store (release ≈4e-16 m²/s, SERCA ≈0.9 µM/s), IP3 as a network substance with its own junctional permeability (~2 µm/s), and realistic junction fraction (~1e-5) which needs the implicit solver for dt.
 - [x] Init phase (`initTime`), bath-concentration modifier, GJ open / pump rate / membrane current display fields
 - [ ] Larger time steps. Tried an implicit voltage predictor (Newton on the linearised cell circuit): 500× on stiff leaks but no help for spikes (gate kinetics set dt), so dropped for simplicity. Revisit only if slow, leaky experiments become a real use case.
-- [ ] Extracellular grid (own formulation; BETSE's is heuristic)
+- [x] Extracellular spaces: BETSE's ECM ported with parity (grid, electrodiffusion, env voltage, junctions, applied edge voltage); UI dialog, heatmap, voltage modifier, Applied field preset. Open: networks + ECM, fluid flow / deformation (BETSE experimental).

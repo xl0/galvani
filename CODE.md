@@ -31,6 +31,18 @@ BETSE (see PLAN.md, docs/adr/0001).
     a single `expm1`; flux scatter uses `mesh.memSaOverVol`; NaN checks are
     `x !== x` (JavaScriptCore does not inline `Number.isNaN`). Parity holds
     to 1e-12. Bench: scratchpad `bench.ts` (excitable preset, 200 µm disc).
+  - `ecm.ts` — BETSE extracellular spaces: nx×ny grid over the world
+    (fixture bounds, or the padded vertex box for generated clusters), nearest
+    -square maps for membranes / cells, per-ion grid diffusivity with tight
+    (cluster boundary + neighbours) and adherens (cluster interior) scaling,
+    edge clamp to the bath, Nernst–Planck electrodiffusion with BETSE's
+    `finitediff` replicas (edge-sign quirks kept), membrane flux divergence
+    into squares, env voltage = screened surface charge (Debye `koEnv`,
+    fixed per phase by `setScreening`) Gaussian-smoothed + Laplace solution
+    for applied edge voltages (`solvePhiB`, SOR) which also offsets Vm.
+    `state.ecm` null = well-mixed bath. Networks + ECM not supported (throws).
+    Three fixtures (`betse-ecm`, `-tj`, `-volt`; the last is BETSE's sim
+    phase, whose event clock is `linspace(0,total,n)`) hold at round-off.
   - `channels.ts` — HH channel models ported from BETSE (Nav1.2/1.3/1.6, NavRat1/2,
     Na leak, Kv1.1–1.6, Kv2.x, Kv3.x, K fast, Kir2.1, K leak, Cav1.2/1.3,
     Cav2.1–2.3, Cav3.1/3.3, Ca L2/L3/G, Ca leak, Cl leak, HCN1/2/4 and
@@ -71,7 +83,9 @@ BETSE (see PLAN.md, docs/adr/0001).
     A modifier targets a region (or all cells) from `t` to `tEnd` (null =
     forever): perm sets a value or scales by a factor (later wins), pump / GJ
     factors multiply, cut fires once, bath holds an ion's bath concentration
-    (value or base × factor) and restores it after; `enabled` flag.
+    (value or base × factor; with ECM the world-edge value) and restores it
+    after; voltage applies ±peak at two world edges with logistic ramps
+    (needs `experiment.ecm`); `enabled` flag.
     `initTime` > 0 runs a BETSE-style init phase first (only permanent
     modifiers, `permanentOnly()`), then the worker restarts the clock at 0,
     posts `initDone` and the session drops the init frames/traces. `applyModulation()`
@@ -115,7 +129,9 @@ BETSE (see PLAN.md, docs/adr/0001).
   paint brush: left adds / right or shift erases, cut brush, probes, hover
   readout, scale bar (round length spanning 60–150 px), wheel zoom anchored
   on the pointer, middle/alt drag pans; for ion
-  fields the background is tinted with the bath concentration),
+  fields the background is tinted with the bath concentration; with
+  extracellular spaces the grid is drawn as a heatmap on the field's scale
+  and hovering reads the square's voltage and concentrations),
   `TracePanel` (toggleable quantities, one stacked `TraceChart` per quantity:
   a small Canvas2D line chart with nice ticks, null gaps, half-pixel min/max
   column downsampling (stable as data grows),
@@ -126,7 +142,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   pointer, shift+wheel / wheel over the axis zooms values (per chart),
   double-click resets, y auto-fits the visible window; wheel is attached
   non-passive by hand because Svelte registers it passive), `Playback`,
-  Display fields: Vm, each ion, GJ open fraction, pump rate, net membrane
+  Display fields: Vm, each ion, V env (extracellular voltage; cells drawn
+  neutral, grid on its own range), GJ open fraction, pump rate, net membrane
   current (`state.iMem`, A/m², accumulated in step + channels), channel open
   fractions, substances; membrane-native ones average over a cell's membranes.
   `Colorbar` (limits for the current range mode; freeze copies them into a

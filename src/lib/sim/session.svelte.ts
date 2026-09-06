@@ -6,7 +6,7 @@ import type { FromWorker, MeshGeom, Snapshot, ToWorker } from './protocol';
 
 /** Per-probe series aligned to SimSession.traceT; null before the probe existed. */
 function snapshotBytes(s: Snapshot): number {
-	let b = s.vmAve.byteLength + s.vm.byteLength + s.cc.byteLength + s.ccEnv.byteLength + s.gjOpen.byteLength + s.pump.byteLength + s.iMem.byteLength;
+	let b = s.vmAve.byteLength + s.vm.byteLength + s.cc.byteLength + s.ccEnv.byteLength + s.gjOpen.byteLength + s.pump.byteLength + s.iMem.byteLength + (s.env ? s.env.cc.byteLength + s.env.v.byteLength : 0);
 	for (const c of s.channels) b += c.P.byteLength;
 	for (const x of s.subs) b += x.cells.byteLength;
 	return b;

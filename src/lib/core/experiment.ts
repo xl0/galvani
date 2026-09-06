@@ -4,6 +4,7 @@ import type { Mesh } from './mesh';
 import type { SimState } from './state';
 import { basicIons, basicParams } from './defaults';
 import type { NetworkConfig } from './network';
+import type { EcmConfig } from './ecm';
 
 /** Named set of cells: a target for modifiers, channels and painting. */
 export const ProfileSchema = z.object({
@@ -28,8 +29,11 @@ export const ModifierSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('pump'), factor: z.number().nonnegative(), ...timing }),
 	z.object({ kind: z.literal('gj'), factor: z.number().nonnegative(), ...timing }),
 	z.object({ kind: z.literal('cut'), ...timing }),
-	/** hold the bath concentration of an ion at a value (or base × factor) while active; restored afterwards. `profile` is ignored. */
-	z.object({ kind: z.literal('bath'), ion: z.string(), value: z.number().nonnegative().optional(), factor: z.number().nonnegative().optional(), ...timing })
+	/** hold the bath concentration of an ion at a value (or base × factor) while active; restored afterwards. `profile` is ignored.
+	 *  With extracellular spaces this is the concentration held at the world edges. */
+	z.object({ kind: z.literal('bath'), ion: z.string(), value: z.number().nonnegative().optional(), factor: z.number().nonnegative().optional(), ...timing }),
+	/** voltage applied at two world edges (needs extracellular spaces): +peak on `pos`, −peak on `neg`, logistic ramps of `rate` seconds (BETSE "apply external voltage"). `profile` is ignored. */
+	z.object({ kind: z.literal('voltage'), peak: z.number(), pos: z.enum(['T', 'B', 'L', 'R']), neg: z.enum(['T', 'B', 'L', 'R']), rate: z.number().positive(), ...timing })
 ]);
 export type Modifier = z.infer<typeof ModifierSchema>;
 
@@ -103,6 +107,11 @@ const GeneratorSchema = z.object({
 	cellSpacing: z.number(), disorder: z.number(), scaleCell: z.number(), mask: MaskSchema
 });
 
+/** Extracellular spaces (BETSE ECM); null = well-mixed bath. See `ecm.ts`. */
+export const EcmSchema: z.ZodType<EcmConfig> = z.object({
+	gridSize: z.number().int().min(10).max(60), tjScale: z.number().positive(), adhScale: z.number().positive(), tjRel: z.record(z.string(), z.number().nonnegative())
+});
+
 /** The whole experiment definition: what gets serialized into the URL. */
 export const ExperimentSchema = z.object({
 	version: z.literal(1),
@@ -119,7 +128,8 @@ export const ExperimentSchema = z.object({
 	channels: z.array(ChannelSchema).default([]),
 	/** starting membrane voltage [V]; realized by offsetting the balancing anion per cell */
 	initialVm: z.number().default(0),
-	network: NetworkSchema.nullable().default(null)
+	network: NetworkSchema.nullable().default(null),
+	ecm: EcmSchema.nullable().default(null)
 });
 export type Experiment = z.infer<typeof ExperimentSchema>;
 
@@ -137,7 +147,8 @@ export const baseExperiment: Experiment = {
 	modifiers: [],
 	channels: [],
 	initialVm: 0,
-	network: null
+	network: null,
+	ecm: null
 };
 
 /** Changes to these require rebuilding mesh and state rather than a live update. */
@@ -146,6 +157,7 @@ export function needsReload(a: Experiment, b: Experiment): boolean {
 		JSON.stringify(a.generator) !== JSON.stringify(b.generator) ||
 		a.initialVm !== b.initialVm ||
 		a.initTime !== b.initTime ||
+		JSON.stringify(a.ecm) !== JSON.stringify(b.ecm) ||
 		JSON.stringify(a.network?.substances.map((s) => [s.name, s.cCell, s.cEnv, s.z])) !== JSON.stringify(b.network?.substances.map((s) => [s.name, s.cCell, s.cEnv, s.z])) ||
 		a.ions.length !== b.ions.length ||
 		a.ions.some((x, i) => x.name !== b.ions[i].name || x.z !== b.ions[i].z || x.cCell !== b.ions[i].cCell || x.cEnv !== b.ions[i].cEnv || x.Dfree !== b.ions[i].Dfree)
@@ -154,12 +166,12 @@ export function needsReload(a: Experiment, b: Experiment): boolean {
 
 /** The experiment with only its permanent modifiers (t = 0, no end): what the initialisation phase sees. */
 export function permanentOnly(exp: Experiment): Experiment {
-	return { ...exp, modifiers: exp.modifiers.filter((m) => m.kind !== 'cut' && m.kind !== 'bath' && m.t === 0 && m.tEnd === null) };
+	return { ...exp, modifiers: exp.modifiers.filter((m) => m.kind !== 'cut' && m.kind !== 'bath' && m.kind !== 'voltage' && m.t === 0 && m.tEnd === null) };
 }
 
 /** True if any modifier is windowed, so per-membrane factors must be refreshed every step. */
 export function hasTimedModifiers(exp: Experiment): boolean {
-	return exp.modifiers.some((m) => m.enabled && m.kind !== 'cut' && m.kind !== 'bath' && (m.t > 0 || m.tEnd !== null));
+	return exp.modifiers.some((m) => m.enabled && m.kind !== 'cut' && m.kind !== 'bath' && m.kind !== 'voltage' && (m.t > 0 || m.tEnd !== null));
 }
 
 /**
@@ -172,7 +184,7 @@ export function applyModulation(mesh: Mesh, exp: Experiment, s: SimState, t: num
 	exp.profiles.forEach((p, pi) => {
 		for (const c of p.cells) if (c < mesh.nCells) cellProfile[c] = pi;
 	});
-	const active = exp.modifiers.filter((m) => m.enabled && m.kind !== 'cut' && m.kind !== 'bath' && t >= m.t && (m.tEnd === null || t < m.tEnd));
+	const active = exp.modifiers.filter((m) => m.enabled && m.kind !== 'cut' && m.kind !== 'bath' && m.kind !== 'voltage' && t >= m.t && (m.tEnd === null || t < m.tEnd));
 	const matches = (mod: { profile: string }, prof: Profile | null) => mod.profile === '' || (prof !== null && prof.id === mod.profile);
 	const nIons = exp.ions.length;
 	const d = new Float64Array(nIons);
@@ -183,7 +195,7 @@ export function applyModulation(mesh: Mesh, exp: Experiment, s: SimState, t: num
 		for (let i = 0; i < nIons; i++) d[i] = exp.ions[i].Dm;
 		for (const mod of active) {
 			if (!matches(mod, prof)) continue;
-			if (mod.kind === 'bath') continue;
+			if (mod.kind === 'bath' || mod.kind === 'voltage') continue;
 			if (mod.kind === 'pump') pump *= mod.factor;
 			else if (mod.kind === 'gj') gj *= mod.factor;
 			else if (mod.kind === 'perm') {

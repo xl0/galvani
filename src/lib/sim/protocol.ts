@@ -39,6 +39,8 @@ export interface Snapshot {
 	/** Na/K pump rate per membrane [mol/m2 s] and net membrane current density into the cell [A/m2] */
 	pump: Float32Array;
 	iMem: Float32Array;
+	/** extracellular grid (null = well-mixed bath): per-ion concentrations (ion-major, nx*ny each) and environment voltage */
+	env: { nx: number; ny: number; xmin: number; ymin: number; delta: number; cc: Float32Array; v: Float32Array } | null;
 	/** 'init' while the initialisation phase runs (clock restarts at 0 when it ends) */
 	phase: 'init' | 'run';
 	/** open fraction per membrane for each active channel */

@@ -6,6 +6,7 @@ import { generateMesh } from '$lib/core/generator';
 import { Network } from '$lib/core/network';
 import type { Mesh } from '$lib/core/mesh';
 import { createState, updateV, type SimState } from '$lib/core/state';
+import { buildEcm, createEcmState, pulse, setScreening } from '$lib/core/ecm';
 import { step, UnstableError } from '$lib/core/step';
 import type { FromWorker, MeshGeom, ToWorker } from './protocol';
 
@@ -64,6 +65,7 @@ function snapshot(): void {
 		vmAve: Float32Array.from(state.vmAve), vm: Float32Array.from(state.vm), cc,
 		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen),
 		pump: Float32Array.from(state.rateNaK), iMem: Float32Array.from(state.iMem), phase,
+		env: state.ecm ? { nx: state.ecm.grid.nx, ny: state.ecm.grid.ny, xmin: state.ecm.grid.xmin, ymin: state.ecm.grid.ymin, delta: state.ecm.grid.delta, cc: envGrid(), v: Float32Array.from(state.ecm.vEnv) } : null,
 		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })),
 		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnv })) : [], trace
 	};
@@ -72,10 +74,31 @@ function snapshot(): void {
 	lastSnapT = state.t;
 }
 
+/** ion-major copy of the extracellular grid for the snapshot */
+function envGrid(): Float32Array {
+	const e = state.ecm!, n = e.grid.nx * e.grid.ny, out = new Float32Array(exp.ions.length * n);
+	for (let i = 0; i < exp.ions.length; i++) out.set(e.cc[i], i * n);
+	return out;
+}
+
+/** Extracellular grid over the cluster's bounding box padded by a cell diameter (BETSE uses its world extent; generated worlds have none). */
+function buildEcmState(keep: SimState | null): void {
+	if (!exp.ecm) { state.ecm = null; return; }
+	let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+	for (let i = 0; i < mesh.verts.length; i += 2) { xmin = Math.min(xmin, mesh.verts[i]); xmax = Math.max(xmax, mesh.verts[i]); ymin = Math.min(ymin, mesh.verts[i + 1]); ymax = Math.max(ymax, mesh.verts[i + 1]); }
+	const pad = 2 * exp.generator.cellRadius;
+	const grid = buildEcm(mesh, exp.ions, exp.ecm, [xmin - pad, xmax + pad, ymin - pad, ymax + pad], exp.generator.cellHeight, exp.generator.cellRadius, exp.params.T);
+	const es = createEcmState(grid, exp.ions);
+	if (keep?.ecm && keep.ecm.grid.nx === grid.nx && keep.ecm.grid.ny === grid.ny) { for (let i = 0; i < exp.ions.length; i++) es.cc[i].set(keep.ecm.cc[i]); es.vEnv.set(keep.ecm.vEnv); es.eEnvX.set(keep.ecm.eEnvX); es.eEnvY.set(keep.ecm.eEnvY); }
+	setScreening(es, exp.ions);
+	state.ecm = es;
+}
+
 function load(e: Experiment): void {
 	exp = e;
 	mesh = generateMesh(e.generator);
 	state = createState(mesh, e.ions, e.initialVm, e.params.cm);
+	buildEcmState(null);
 	firedCuts.clear();
 	bathHeld.clear();
 	hasTimedMods = hasTimedModifiers(e);
@@ -151,7 +174,9 @@ function doCut(cells: Iterable<number>): void {
 	const removed = new Set(cells);
 	if (removed.size === 0) return;
 	const r = cutCells(mesh, state, removed);
+	const prev = state;
 	mesh = r.mesh; state = r.state;
+	buildEcmState(prev);
 	// remap profiles and probes to the new indices
 	exp = {
 		...exp,
@@ -178,10 +203,20 @@ function fireModifiers(): void {
 			const ion = exp.ions.findIndex((x) => x.name === ev.ion);
 			if (ion < 0) return;
 			const active = ev.enabled && state.t >= ev.t && (ev.tEnd === null || state.t < ev.tEnd);
-			if (active) { state.ccEnv[ion] = ev.value ?? exp.ions[ion].cEnv * (ev.factor ?? 1); bathHeld.add(i); }
-			else if (bathHeld.delete(i)) state.ccEnv[ion] = exp.ions[ion].cEnv;
+			const target = ev.value ?? exp.ions[ion].cEnv * (ev.factor ?? 1);
+			if (active) { if (state.ecm) state.ecm.grid.cBound[ion] = target; else state.ccEnv[ion] = target; bathHeld.add(i); }
+			else if (bathHeld.delete(i)) { if (state.ecm) state.ecm.grid.cBound[ion] = exp.ions[ion].cEnv; else state.ccEnv[ion] = exp.ions[ion].cEnv; }
 		}
 	});
+	if (state.ecm) {
+		const b = state.ecm.grid.boundV;
+		b.T = 0; b.B = 0; b.L = 0; b.R = 0;
+		for (const ev of exp.modifiers) {
+			if (ev.kind !== 'voltage' || !ev.enabled) continue;
+			const v = ev.peak * pulse(state.t, ev.t, ev.tEnd ?? Infinity, ev.rate);
+			b[ev.pos] += v; b[ev.neg] -= v;
+		}
+	}
 	if (hasTimedMods) applyModulation(mesh, exp, state, state.t);
 }
 
@@ -190,6 +225,7 @@ function finishInit(): void {
 	phase = 'run';
 	state.t = 0;
 	state.step = 0;
+	if (state.ecm) setScreening(state.ecm, exp.ions);
 	applyModulation(mesh, exp, state, 0);
 	traceT = []; traceV = []; traceB = [];
 	lastSnapT = -Infinity;
