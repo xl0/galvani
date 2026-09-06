@@ -29,6 +29,8 @@ export interface SimState {
 	fluxesGj: Float64Array[];
 	/** Na/K pump rate per membrane */
 	rateNaK: Float64Array;
+	/** net membrane current density into the cell over the last step, all ions and channels [A/m2] */
+	iMem: Float64Array;
 	/** net charge density per cell [C/m3] */
 	rhoCells: Float64Array;
 	/** transjunctional voltage per membrane */
@@ -64,6 +66,7 @@ export function createState(mesh: Mesh, ions: Ion[], initialVm = 0, cm = 0.05): 
 		fluxesMem: per(nMems),
 		fluxesGj: per(nMems),
 		rateNaK: new Float64Array(nMems),
+		iMem: new Float64Array(nMems),
 		rhoCells: new Float64Array(nCells),
 		vgj: new Float64Array(nMems),
 		nakMod: new Float64Array(nMems).fill(1),

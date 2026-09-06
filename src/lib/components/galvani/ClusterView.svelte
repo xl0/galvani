@@ -22,11 +22,11 @@
 		const g = session.geom;
 		if (!g) return null;
 		const f = view.field;
-		if (membranes) return f === 'vm' ? Float32Array.from(s.vm, (v) => v * 1e3) : f.startsWith('P:') ? (s.channels.find((ch) => ch.id === f.slice(2))?.P ?? null) : null;
+		if (membranes) return f === 'vm' ? Float32Array.from(s.vm, (v) => v * 1e3) : f.startsWith('P:') ? (s.channels.find((ch) => ch.id === f.slice(2))?.P ?? null) : f === 'gj' ? s.gjOpen : f === 'pump' ? s.pump : f === 'imem' ? s.iMem : null;
 		const out = new Float32Array(g.nCells);
 		if (f === 'vm') for (let c = 0; c < g.nCells; c++) out[c] = s.vmAve[c] * 1e3;
-		else if (f.startsWith('P:')) {
-			// channel open fraction: cell value = mean over its membranes
+		else if (f.startsWith('P:') || f === 'gj' || f === 'pump' || f === 'imem') {
+			// membrane-native field: cell value = mean over its membranes
 			const mv = fieldValues(s, true);
 			if (!mv) return null;
 			const n = new Int32Array(g.nCells);

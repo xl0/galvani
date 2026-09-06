@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { createChannel, type ChannelInstance } from '$lib/core/channels';
 import { cutCells } from '$lib/core/cut';
-import { applyModulation, type Experiment, hasTimedModifiers } from '$lib/core/experiment';
+import { applyModulation, type Experiment, hasTimedModifiers, permanentOnly } from '$lib/core/experiment';
 import { generateMesh } from '$lib/core/generator';
 import { Network } from '$lib/core/network';
 import type { Mesh } from '$lib/core/mesh';
@@ -19,6 +19,10 @@ let anchor = { wall: 0, t: 0 };
 let probes: number[] = [];
 const firedCuts = new Set<number>();
 let hasTimedMods = false;
+/** initialisation phase: only permanent modifiers, clock restarts at 0 when initTime is reached */
+let phase: 'init' | 'run' = 'run';
+/** bath modifiers active last step, so their ion can be restored when they end */
+const bathHeld = new Set<number>();
 let channels: ChannelInstance[] = [];
 let network: Network | null = null;
 
@@ -59,10 +63,11 @@ function snapshot(): void {
 		t: state.t, step: state.step, running, stepsPerSec,
 		vmAve: Float32Array.from(state.vmAve), vm: Float32Array.from(state.vm), cc,
 		ccEnv: Float32Array.from(state.ccEnv), gjOpen: Float32Array.from(state.gjOpen),
+		pump: Float32Array.from(state.rateNaK), iMem: Float32Array.from(state.iMem), phase,
 		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })),
 		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnv })) : [], trace
 	};
-	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
+	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, snap.pump.buffer, snap.iMem.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
 	lastSnapT = state.t;
 }
@@ -72,8 +77,10 @@ function load(e: Experiment): void {
 	mesh = generateMesh(e.generator);
 	state = createState(mesh, e.ions, e.initialVm, e.params.cm);
 	firedCuts.clear();
+	bathHeld.clear();
 	hasTimedMods = hasTimedModifiers(e);
-	applyModulation(mesh, exp, state, 0);
+	phase = e.initTime > 0 ? 'init' : 'run';
+	applyModulation(mesh, phase === 'init' ? permanentOnly(exp) : exp, state, 0);
 	buildNetwork(null);
 	updateV(mesh, e.ions, e.params, state);
 	channels = [];
@@ -167,8 +174,26 @@ function fireModifiers(): void {
 			const prof = exp.profiles.find((p) => p.id === ev.profile);
 			if (prof) doCut(prof.cells);
 		}
+		if (ev.kind === 'bath') {
+			const ion = exp.ions.findIndex((x) => x.name === ev.ion);
+			if (ion < 0) return;
+			const active = ev.enabled && state.t >= ev.t && (ev.tEnd === null || state.t < ev.tEnd);
+			if (active) { state.ccEnv[ion] = ev.value ?? exp.ions[ion].cEnv * (ev.factor ?? 1); bathHeld.add(i); }
+			else if (bathHeld.delete(i)) state.ccEnv[ion] = exp.ions[ion].cEnv;
+		}
 	});
 	if (hasTimedMods) applyModulation(mesh, exp, state, state.t);
+}
+
+/** End of the initialisation phase: restart the clock and hand over to the full modifier list. */
+function finishInit(): void {
+	phase = 'run';
+	state.t = 0;
+	state.step = 0;
+	applyModulation(mesh, exp, state, 0);
+	traceT = []; traceV = []; traceB = [];
+	lastSnapT = -Infinity;
+	post({ type: 'initDone' });
 }
 
 function sampleTrace(): void {
@@ -182,7 +207,7 @@ function sampleTrace(): void {
 }
 
 function doStep(): boolean {
-	fireModifiers();
+	if (phase === 'run') fireModifiers();
 	try {
 		step(mesh, exp.ions, exp.params, state, channels, network);
 	} catch (err) {
@@ -190,6 +215,7 @@ function doStep(): boolean {
 		post({ type: 'error', message: err instanceof UnstableError ? `${err.message}. Reduce the time step.` : String(err) });
 		return false;
 	}
+	if (phase === 'init' && state.t >= exp.initTime - 1e-12) finishInit();
 	sampleTrace();
 	return true;
 }
@@ -205,7 +231,7 @@ function tick(): void {
 	while (state.t < allowedT && performance.now() - t0 < 12) {
 		if (!doStep()) break;
 		n++;
-		if (state.t >= exp.endTime) { running = false; break; }
+		if (phase === 'run' && state.t >= exp.endTime) { running = false; break; }
 		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot();
 	}
 	const dtms = performance.now() - t0;

@@ -76,6 +76,7 @@
 		set((e) => {
 			if (kind === 'cut') e.modifiers.push({ kind, ...base, t: Math.ceil(session.view?.t ?? 0) + 1 });
 			else if (kind === 'perm') e.modifiers.push({ kind, ion: 'Na', factor: 20, ...base });
+			else if (kind === 'bath') e.modifiers.push({ kind, ion: 'K', factor: 4, ...base, t: Math.ceil(session.view?.t ?? 0) + 1 });
 			else e.modifiers.push({ kind, factor: 0, ...base });
 		});
 	}
@@ -127,7 +128,7 @@
 		if (!n || n.substances.length === 0) return 'none';
 		return `${n.substances.map((s) => s.name).join(', ')}${n.reactions.length ? ` · ${n.reactions.length} reaction${n.reactions.length > 1 ? 's' : ''}` : ''}${n.modulators.length ? ` · ${n.modulators.length} modulator${n.modulators.length > 1 ? 's' : ''}` : ''}`;
 	});
-	const modLabel: Record<Modifier['kind'], string> = { perm: 'permeability', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells' };
+	const modLabel: Record<Modifier['kind'], string> = { perm: 'permeability', pump: 'pump rate ×', gj: 'gap junctions ×', cut: 'cut cells', bath: 'bath' };
 </script>
 
 <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto">
@@ -200,10 +201,11 @@
 	</SettingsDialog>
 
 	<SettingsDialog title="Run" blurb="Time stepping and the physical constants that set the scale of the response.">
-		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T - 273.15, 3)} °C{/snippet}
+		{#snippet summary()}dt {fmt(ex.params.dt, 2)} s · {#if ex.initTime > 0}init {fmt(ex.initTime, 3)} s · {/if}end {fmt(ex.endTime, 3)} s · V₀ {fmt(ex.initialVm * 1e3, 3)} mV · {fmt(ex.params.T - 273.15, 3)} °C{/snippet}
 		{#snippet form()}
 			<BigField label="Time step" value={ex.params.dt} unit="s" description="Integration step. Smaller is more accurate and slower. Steps longer than the membrane RC time go unstable (Vm explodes, run halts): ~0.01 s at default permeabilities, ~0.1 ms with strong channels." onchange={(v) => set((e) => (e.params.dt = v))} />
 			<BigField label="End time" value={ex.endTime} unit="s" description="The run pauses when simulated time reaches this. Press Run again to restart from zero." onchange={(v) => set((e) => (e.endTime = v))} />
+			<BigField label="Initialisation" value={ex.initTime} unit="s" description="BETSE-style init phase: simulate this long first with only the permanent modifiers (no timed interventions, cuts or bath changes), then restart the clock at 0 and begin the experiment from that settled state. 0 = start directly. Recorded frames and traces begin after initialisation." onchange={(v) => set((e) => (e.initTime = v))} />
 			<BigField label="Initial Vm" value={ex.initialVm} scale={1e3} unit="mV" description="Starting membrane voltage. Realized by adding a little balancing anion inside each cell so the charge-capacitor relation gives this Vm at t = 0. Saves waiting a minute for the pump to polarize the cluster." onchange={(v) => set((e) => (e.initialVm = v))} />
 			<BigField label="Temperature" value={ex.params.T - 273.15} unit="°C" description="Sets the thermal voltage RT/F (about 26.7 mV at 37 °C) that appears in every flux and Nernst equation." onchange={(v) => set((e) => (e.params.T = v + 273.15))} />
 			<BigField label="Membrane capacitance" value={ex.params.cm} unit="F/m²" description="Charge per area per volt. Vm = surface charge / capacitance, so lower values make Vm swing further for the same ion movement. Real membranes are ~0.01 F/m²; BETSE uses 0.05." onchange={(v) => set((e) => (e.params.cm = v))} />
@@ -423,6 +425,7 @@
 			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('pump')} title="Scale the Na/K pump rate">+pump</Button>
 			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('gj')} title="Scale gap-junction coupling">+GJ</Button>
 			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('cut')} disabled={ex.profiles.length === 0} title="Remove a region's cells at a given time (needs a region)">+cut</Button>
+			<Button size="sm" variant="outline" class="h-7 px-1.5 text-xs" onclick={() => addModifier('bath')} title="Hold an ion's bath concentration at a value (restored afterwards)">+bath</Button>
 		</div>
 		<div class="mt-1 text-sm text-muted-foreground">Changes to membrane properties of a region (or all cells), from a start time until an end time. Leave the end blank for permanent. Pump and junction factors multiply; permeability is set to a value or scaled by a factor.</div>
 		{#each ex.modifiers as mod, i (i)}
@@ -430,29 +433,35 @@
 				<div class="flex items-center gap-1.5">
 					<Checkbox checked={mod.enabled} onCheckedChange={(v) => set((x) => (x.modifiers[i].enabled = v === true))} title="Enabled" />
 					<span class="text-sm font-medium">{modLabel[mod.kind]}</span>
-					{#if mod.kind === 'perm'}
-						<NativeSelect.Root size="sm" value={mod.ion} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm') y.ion = (e.target as HTMLSelectElement).value; })}>
+					{#if mod.kind === 'perm' || mod.kind === 'bath'}
+						<NativeSelect.Root size="sm" value={mod.ion} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.ion = (e.target as HTMLSelectElement).value; })}>
 							{#each ex.ions as ion (ion.name)}<NativeSelect.Option value={ion.name}>{ion.name}</NativeSelect.Option>{/each}
 						</NativeSelect.Root>
 					{/if}
-					<NativeSelect.Root size="sm" class="min-w-0 flex-1" value={mod.profile} onchange={(e) => set((x) => (x.modifiers[i].profile = (e.target as HTMLSelectElement).value))}>
-						{#if mod.kind !== 'cut'}<NativeSelect.Option value="">all cells</NativeSelect.Option>{/if}
-						{#each ex.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
-					</NativeSelect.Root>
+					{#if mod.kind === 'bath'}
+						<span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">whole bath</span>
+					{:else}
+						<NativeSelect.Root size="sm" class="min-w-0 flex-1" value={mod.profile} onchange={(e) => set((x) => (x.modifiers[i].profile = (e.target as HTMLSelectElement).value))}>
+							{#if mod.kind !== 'cut'}<NativeSelect.Option value="">all cells</NativeSelect.Option>{/if}
+							{#each ex.profiles as p (p.id)}<NativeSelect.Option value={p.id}>{p.name}</NativeSelect.Option>{/each}
+						</NativeSelect.Root>
+					{/if}
 					<Button size="sm" variant="ghost" class="h-6 px-1" onclick={() => set((x) => x.modifiers.splice(i, 1))} title="Delete modifier"><Trash class="size-3.5" /></Button>
 				</div>
 				<div class="mt-1.5 flex flex-col gap-1">
-					{#if mod.kind === 'perm'}
+					{#if mod.kind === 'perm' || mod.kind === 'bath'}
 						{@const ion = ex.ions.find((x) => x.name === mod.ion)}
+						{@const base = mod.kind === 'perm' ? (ion?.Dm ?? 0) : (ion?.cEnv ?? 0)}
+						{@const unit = mod.kind === 'perm' ? 'm²/s' : 'mM'}
 						<div class="flex items-center gap-1.5 text-sm">
-							<NativeSelect.Root size="sm" class="w-20 shrink-0" value={mod.value !== undefined ? 'set' : 'scale'} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'perm') return; if ((e.target as HTMLSelectElement).value === 'set') { y.value = y.factor !== undefined && ion ? ion.Dm * y.factor : (ion?.Dm ?? 0); y.factor = undefined; } else { y.factor = y.value !== undefined && ion && ion.Dm > 0 ? y.value / ion.Dm : 1; y.value = undefined; } })} title="Set an absolute permeability, or scale the current one">
+							<NativeSelect.Root size="sm" class="w-20 shrink-0" value={mod.value !== undefined ? 'set' : 'scale'} onchange={(e) => set((x) => { const y = x.modifiers[i]; if (y.kind !== 'perm' && y.kind !== 'bath') return; if ((e.target as HTMLSelectElement).value === 'set') { y.value = base * (y.factor ?? 1); y.factor = undefined; } else { y.factor = y.value !== undefined && base > 0 ? y.value / base : 1; y.value = undefined; } })} title="Set an absolute value, or scale the experiment's value">
 								<NativeSelect.Option value="set">set to</NativeSelect.Option>
 								<NativeSelect.Option value="scale">scale ×</NativeSelect.Option>
 							</NativeSelect.Root>
 							{#if mod.value !== undefined}
-								<NumField label="" value={mod.value} unit="m²/s" help="Membrane permeability to {mod.ion} while active (default {ion?.Dm})" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm') y.value = v; })} />
+								<NumField label="" value={mod.value} {unit} help="{mod.kind === 'perm' ? 'Membrane permeability to' : 'Bath concentration of'} {mod.ion} while active (experiment value {base})" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.value = v; })} />
 							{:else}
-								<NumField label="" value={mod.factor ?? 1} step={0.1} min={0} help="Multiplier on the permeability to {mod.ion} while active" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm') y.factor = v; })} />
+								<NumField label="" value={mod.factor ?? 1} step={0.1} min={0} help="Multiplier on the experiment's {mod.kind === 'perm' ? 'permeability to' : 'bath concentration of'} {mod.ion} while active" onchange={(v) => set((x) => { const y = x.modifiers[i]; if (y.kind === 'perm' || y.kind === 'bath') y.factor = v; })} />
 							{/if}
 						</div>
 					{:else if mod.kind !== 'cut'}

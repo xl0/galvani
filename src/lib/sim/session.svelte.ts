@@ -6,7 +6,7 @@ import type { FromWorker, MeshGeom, Snapshot, ToWorker } from './protocol';
 
 /** Per-probe series aligned to SimSession.traceT; null before the probe existed. */
 function snapshotBytes(s: Snapshot): number {
-	let b = s.vmAve.byteLength + s.vm.byteLength + s.cc.byteLength + s.ccEnv.byteLength + s.gjOpen.byteLength;
+	let b = s.vmAve.byteLength + s.vm.byteLength + s.cc.byteLength + s.ccEnv.byteLength + s.gjOpen.byteLength + s.pump.byteLength + s.iMem.byteLength;
 	for (const c of s.channels) b += c.P.byteLength;
 	for (const x of s.subs) b += x.cells.byteLength;
 	return b;
@@ -109,6 +109,9 @@ export class SimSession {
 				this.running = msg.snapshot.running;
 				this.stepsPerSec = msg.snapshot.stepsPerSec;
 				this.appendTrace(msg.snapshot);
+				break;
+			case 'initDone':
+				this.clearRecords();
 				break;
 			case 'error':
 				this.error = msg.message;
@@ -231,7 +234,8 @@ export class SimSession {
 		this.playhead = index === null ? null : Math.max(0, Math.min(this.history.length - 1, index));
 	}
 
-	reset(): void {
+	/** Drop recorded frames and traces (reset, or the initialisation phase handing over to the run). */
+	private clearRecords(): void {
 		this.history = [];
 		this.historyBytes = 0;
 		this.historyLen = 0;
@@ -240,6 +244,10 @@ export class SimSession {
 		this.traceT = [];
 		this.traceBath = [];
 		this.traceVersion++;
+	}
+
+	reset(): void {
+		this.clearRecords();
 		this.error = null;
 		this.post({ type: 'load', experiment: $state.snapshot(this.experiment) });
 		this.post({ type: 'probes', cells: $state.snapshot(this.probes) });

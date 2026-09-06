@@ -71,5 +71,6 @@ internally (mol/m3, V, s, m). Parity fixture: tests/fixtures/betse-basic.json
 - [ ] Network UI beyond JSON (forms per substance); transporters / substance pumps if needed
 - [x] Cl / HCN / cation channel families
 - [ ] ER calcium dynamics (BETSE Ca_dyn) and a calcium-wave preset
+- [x] Init phase (`initTime`), bath-concentration modifier, GJ open / pump rate / membrane current display fields
 - [ ] Larger time steps. Tried an implicit voltage predictor (Newton on the linearised cell circuit): 500× on stiff leaks but no help for spikes (gate kinetics set dt), so dropped for simplicity. Revisit only if slow, leaky experiments become a real use case.
 - [ ] Extracellular grid (own formulation; BETSE's is heuristic)

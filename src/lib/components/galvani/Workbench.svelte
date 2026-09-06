@@ -26,7 +26,7 @@
 	let leftPane = $state<Resizable.Pane>();
 	let rightPane = $state<Resizable.Pane>();
 	function toggle(p: Resizable.Pane | undefined) { if (!p) return; if (p.isCollapsed()) p.expand(); else p.collapse(); }
-	const unit = $derived(view.field === 'vm' ? 'mV' : view.field.startsWith('P:') ? 'open' : 'mM');
+	const unit = $derived(view.field === 'vm' ? 'mV' : view.field.startsWith('P:') || view.field === 'gj' ? 'open' : view.field === 'pump' ? 'mol/m²·s' : view.field === 'imem' ? 'A/m²' : 'mM');
 </script>
 
 <svelte:window onkeydown={(e) => { if ((e.target as HTMLElement).closest?.('input,textarea,select')) return; if (e.key === '[') toggle(leftPane); if (e.key === ']') toggle(rightPane); }} />

@@ -7,7 +7,7 @@
  */
 import type { Mesh } from './mesh';
 import type { Ion, Params } from './params';
-import { R } from './params';
+import { F, R } from './params';
 import type { SimState } from './state';
 import { ghkFlux, NONCE } from './step';
 
@@ -242,9 +242,11 @@ export function runChannel(ch: ChannelInstance, mesh: Mesh, ions: Ion[], p: Para
 			flux[k] = ghkFlux(cA, cc[memToCell[k]], P[k] * Dmax * modulator[k], tm, z, vm[k], RT);
 		}
 		let envSum = 0;
+		const iMem = s.iMem, zF = ions[i].z * F;
 		for (let k = 0; k < nMems; k++) {
 			cc[memToCell[k]] += flux[k] * memSaOverVol[k] * dt;
 			envSum -= flux[k] * memSa[k];
+			iMem[k] += zF * flux[k];
 		}
 		const cmem = s.ccAtMem[i];
 		for (let k = 0; k < nMems; k++) cmem[k] = cc[memToCell[k]];

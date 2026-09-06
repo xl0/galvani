@@ -70,7 +70,11 @@ BETSE (see PLAN.md, docs/adr/0001).
     profiles = named cell sets, modifiers) = the URL-serialized document.
     A modifier targets a region (or all cells) from `t` to `tEnd` (null =
     forever): perm sets a value or scales by a factor (later wins), pump / GJ
-    factors multiply, cut fires once; `enabled` flag. `applyModulation()`
+    factors multiply, cut fires once, bath holds an ion's bath concentration
+    (value or base × factor) and restores it after; `enabled` flag.
+    `initTime` > 0 runs a BETSE-style init phase first (only permanent
+    modifiers, `permanentOnly()`), then the worker restarts the clock at 0,
+    posts `initDone` and the session drops the init frames/traces. `applyModulation()`
     writes per-membrane Dm / pump / GJ factors from the modifiers active at t
     (every step only when some modifier is windowed, `hasTimedModifiers`);
     `needsReload()` decides live update vs rebuild.
@@ -121,6 +125,9 @@ BETSE (see PLAN.md, docs/adr/0001).
   pointer, shift+wheel / wheel over the axis zooms values (per chart),
   double-click resets, y auto-fits the visible window; wheel is attached
   non-passive by hand because Svelte registers it passive), `Playback`,
+  Display fields: Vm, each ion, GJ open fraction, pump rate, net membrane
+  current (`state.iMem`, A/m², accumulated in step + channels), channel open
+  fractions, substances; membrane-native ones average over a cell's membranes.
   `Colorbar` (limits for the current range mode; freeze copies them into a
   fixed range). ClusterView keeps `runExt`, the field's min/max over all
   recorded frames, rebuilt on field change or reset and folded per live

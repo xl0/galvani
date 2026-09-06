@@ -18,6 +18,7 @@ export type Profile = z.infer<typeof ProfileSchema>;
  * A modifier changes membrane properties of a target region (`profile` = '' means all
  * cells) from `t` until `tEnd` (null = forever). Permanent region properties are just
  * modifiers with t = 0 and no end; timed interventions are the same thing with a window.
+ * Permanent modifiers also apply during the initialisation phase; windowed ones do not.
  * Permeability modifiers either set an absolute value or scale by a factor; pump / GJ
  * modifiers are multiplicative and stack. A cut removes the region's cells at `t`.
  */
@@ -26,7 +27,9 @@ export const ModifierSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('perm'), ion: z.string(), value: z.number().nonnegative().optional(), factor: z.number().nonnegative().optional(), ...timing }),
 	z.object({ kind: z.literal('pump'), factor: z.number().nonnegative(), ...timing }),
 	z.object({ kind: z.literal('gj'), factor: z.number().nonnegative(), ...timing }),
-	z.object({ kind: z.literal('cut'), ...timing })
+	z.object({ kind: z.literal('cut'), ...timing }),
+	/** hold the bath concentration of an ion at a value (or base × factor) while active; restored afterwards. `profile` is ignored. */
+	z.object({ kind: z.literal('bath'), ion: z.string(), value: z.number().nonnegative().optional(), factor: z.number().nonnegative().optional(), ...timing })
 ]);
 export type Modifier = z.infer<typeof ModifierSchema>;
 
@@ -109,6 +112,8 @@ export const ExperimentSchema = z.object({
 	params: ParamsSchema,
 	/** run end time [s] */
 	endTime: z.number().positive(),
+	/** initialisation: simulate this long with only permanent modifiers, then restart the clock at 0 (BETSE init phase) */
+	initTime: z.number().nonnegative().default(0),
 	profiles: z.array(ProfileSchema),
 	modifiers: z.array(ModifierSchema).default([]),
 	channels: z.array(ChannelSchema).default([]),
@@ -127,6 +132,7 @@ export const baseExperiment: Experiment = {
 	ions: basicIons,
 	params: basicParams,
 	endTime: 60,
+	initTime: 0,
 	profiles: [],
 	modifiers: [],
 	channels: [],
@@ -139,15 +145,21 @@ export function needsReload(a: Experiment, b: Experiment): boolean {
 	return (
 		JSON.stringify(a.generator) !== JSON.stringify(b.generator) ||
 		a.initialVm !== b.initialVm ||
+		a.initTime !== b.initTime ||
 		JSON.stringify(a.network?.substances.map((s) => [s.name, s.cCell, s.cEnv, s.z])) !== JSON.stringify(b.network?.substances.map((s) => [s.name, s.cCell, s.cEnv, s.z])) ||
 		a.ions.length !== b.ions.length ||
 		a.ions.some((x, i) => x.name !== b.ions[i].name || x.z !== b.ions[i].z || x.cCell !== b.ions[i].cCell || x.cEnv !== b.ions[i].cEnv || x.Dfree !== b.ions[i].Dfree)
 	);
 }
 
+/** The experiment with only its permanent modifiers (t = 0, no end): what the initialisation phase sees. */
+export function permanentOnly(exp: Experiment): Experiment {
+	return { ...exp, modifiers: exp.modifiers.filter((m) => m.kind !== 'cut' && m.kind !== 'bath' && m.t === 0 && m.tEnd === null) };
+}
+
 /** True if any modifier is windowed, so per-membrane factors must be refreshed every step. */
 export function hasTimedModifiers(exp: Experiment): boolean {
-	return exp.modifiers.some((m) => m.enabled && m.kind !== 'cut' && (m.t > 0 || m.tEnd !== null));
+	return exp.modifiers.some((m) => m.enabled && m.kind !== 'cut' && m.kind !== 'bath' && (m.t > 0 || m.tEnd !== null));
 }
 
 /**
@@ -160,7 +172,7 @@ export function applyModulation(mesh: Mesh, exp: Experiment, s: SimState, t: num
 	exp.profiles.forEach((p, pi) => {
 		for (const c of p.cells) if (c < mesh.nCells) cellProfile[c] = pi;
 	});
-	const active = exp.modifiers.filter((m) => m.enabled && m.kind !== 'cut' && t >= m.t && (m.tEnd === null || t < m.tEnd));
+	const active = exp.modifiers.filter((m) => m.enabled && m.kind !== 'cut' && m.kind !== 'bath' && t >= m.t && (m.tEnd === null || t < m.tEnd));
 	const matches = (mod: { profile: string }, prof: Profile | null) => mod.profile === '' || (prof !== null && prof.id === mod.profile);
 	const nIons = exp.ions.length;
 	const d = new Float64Array(nIons);
@@ -171,6 +183,7 @@ export function applyModulation(mesh: Mesh, exp: Experiment, s: SimState, t: num
 		for (let i = 0; i < nIons; i++) d[i] = exp.ions[i].Dm;
 		for (const mod of active) {
 			if (!matches(mod, prof)) continue;
+			if (mod.kind === 'bath') continue;
 			if (mod.kind === 'pump') pump *= mod.factor;
 			else if (mod.kind === 'gj') gj *= mod.factor;
 			else if (mod.kind === 'perm') {

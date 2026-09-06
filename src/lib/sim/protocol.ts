@@ -36,6 +36,11 @@ export interface Snapshot {
 	cc: Float32Array;
 	ccEnv: Float32Array;
 	gjOpen: Float32Array;
+	/** Na/K pump rate per membrane [mol/m2 s] and net membrane current density into the cell [A/m2] */
+	pump: Float32Array;
+	iMem: Float32Array;
+	/** 'init' while the initialisation phase runs (clock restarts at 0 when it ends) */
+	phase: 'init' | 'run';
 	/** open fraction per membrane for each active channel */
 	channels: { id: string; type: string; P: Float32Array }[];
 	/** network substances: per-cell concentration [mM] and bath value */
@@ -57,4 +62,5 @@ export type ToWorker =
 export type FromWorker =
 	| { type: 'geom'; geom: MeshGeom; reason: 'load' | 'cut'; cellMap?: Int32Array }
 	| { type: 'snapshot'; snapshot: Snapshot }
+	| { type: 'initDone' }
 	| { type: 'error'; message: string };

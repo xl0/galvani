@@ -35,6 +35,7 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		s.fluxesMem[i].fill(0);
 		s.fluxesGj[i].fill(0);
 	}
+	s.iMem.fill(0);
 
 	// ---- Na/K-ATPase pump ------------------------------------------------
 	const iNa = ions.findIndex((x) => x.name === 'Na');
@@ -152,11 +153,12 @@ export function step(mesh: Mesh, ions: Ion[], p: Params, s: SimState, channels: 
 		const fmem = s.fluxesMem[i];
 		const fgj = s.fluxesGj[i];
 		// membrane fluxes -> cells and bath
-		const saOverVol = mesh.memSaOverVol, memSa = mesh.memSa;
+		const saOverVol = mesh.memSaOverVol, memSa = mesh.memSa, zF = ions[i].z * F, iMem = s.iMem;
 		let envSum = 0;
 		for (let m = 0; m < nMems; m++) {
 			cc[memToCell[m]] += fmem[m] * saOverVol[m] * dt;
 			envSum -= fmem[m] * memSa[m];
+			iMem[m] += zF * fmem[m];
 		}
 		s.ccEnv[i] += (envSum / p.volEnv / nMems) * dt;
 		for (let m = 0; m < nMems; m++) cmem[m] = cc[memToCell[m]];
