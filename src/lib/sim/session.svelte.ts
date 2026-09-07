@@ -9,7 +9,7 @@ import { fieldValues } from '$lib/viz/fields';
 const debug = dbg('galvani:session');
 
 /** Per-probe series aligned to SimSession.traceT; null before the probe existed. */
-function snapshotBytes(s: Snapshot): number {
+export function snapshotBytes(s: Snapshot): number {
 	let b = s.vmAve.byteLength + s.vm.byteLength + s.cc.byteLength + s.ccEnv.byteLength + s.gjOpen.byteLength + s.pump.byteLength + s.iMem.byteLength + (s.env ? s.env.cc.byteLength + s.env.v.byteLength : 0);
 	for (const c of s.channels) b += c.P.byteLength;
 	for (const x of s.subs) b += x.cells.byteLength;
@@ -63,9 +63,7 @@ export class SimSession {
 	/** simulated seconds per real second, or 'max' */
 	speed = $state<number | 'max'>('max');
 
-	static MAX_HISTORY = 3000;
-	/** history is also capped by memory; large clusters get sparser playback instead of growing without bound */
-	static HISTORY_BYTES = 256 * 1024 * 1024;
+	/** history is capped by `experiment.historyMB`; the worker picks the cadence so a run fits, this only guards overruns */
 	private historyBytes = 0;
 	private worker: Worker | null = null;
 	private hashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -104,16 +102,18 @@ export class SimSession {
 				break;
 			}
 			case 'snapshot':
-				this.snap = msg.snapshot;
-				if (msg.snapshot.record && (this.history.length === 0 || msg.snapshot.step !== this.history[this.history.length - 1].step)) {
-					this.history.push(msg.snapshot);
-					this.historyBytes += snapshotBytes(msg.snapshot);
-					while (this.history.length > SimSession.MAX_HISTORY || (this.historyBytes > SimSession.HISTORY_BYTES && this.history.length > 1)) { this.historyBytes -= snapshotBytes(this.history.shift()!); debug('history full (%d frames, %d MB): dropped t=%s', this.history.length, (this.historyBytes / 2 ** 20).toFixed(0), this.history[0].t); }
-					this.historyLen = this.history.length;
+				for (const s of [...msg.frames, msg.snapshot]) {
+					if (s.record && (this.history.length === 0 || s.step !== this.history[this.history.length - 1].step)) {
+						this.history.push(s);
+						this.historyBytes += snapshotBytes(s);
+					}
+					this.appendTrace(s);
 				}
+				while (this.historyBytes > this.experiment.historyMB * 2 ** 20 && this.history.length > 1) { this.historyBytes -= snapshotBytes(this.history.shift()!); debug('history full (%d frames, %d MB): dropped t=%s', this.history.length, (this.historyBytes / 2 ** 20).toFixed(0), this.history[0].t); }
+				this.historyLen = this.history.length;
+				this.snap = msg.snapshot;
 				this.running = msg.snapshot.running;
 				this.stepsPerSec = msg.snapshot.stepsPerSec;
-				this.appendTrace(msg.snapshot);
 				break;
 			case 'initDone':
 				this.clearRecords();

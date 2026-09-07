@@ -48,7 +48,8 @@ export interface Snapshot {
 	/** network substances: per-cell concentration [mM] and bath value */
 	subs: { name: string; cells: Float32Array; env: number }[];
 	trace: TraceChunk;
-	/** true for frames taken on the recording cadence (kept in history); false for live-view refreshes */
+	/** true for frames taken on the recording cadence (kept in history); false for live-view refreshes.
+	 *  Recorded frames taken between live messages are batched in `frames`, oldest first. */
 	record: boolean;
 }
 
@@ -65,6 +66,6 @@ export type ToWorker =
 
 export type FromWorker =
 	| { type: 'geom'; geom: MeshGeom; reason: 'load' | 'cut'; cellMap?: Int32Array }
-	| { type: 'snapshot'; snapshot: Snapshot }
+	| { type: 'snapshot'; snapshot: Snapshot; frames: Snapshot[] }
 	| { type: 'initDone' }
 	| { type: 'error'; message: string };

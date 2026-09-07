@@ -72,8 +72,9 @@ step of 0.1 ms. One step:
    and subtracted.
 
 An optional initialisation phase runs the system to rest with only permanent modifiers
-before the clock starts. The worker records a snapshot every 1/600 of the run for
-scrubbing; probe traces are sampled every step.
+before the clock starts. The worker records frames for scrubbing as densely as the
+recording memory budget allows (every step for small clusters); probe traces are
+sampled every step.
 
 Parity is enforced by fixtures dumped from BETSE (`tools/betse/dump_parity.py`) and
 replayed in `bun test`: resting cluster, channels, calcium, networks, extracellular grid

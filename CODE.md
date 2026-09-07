@@ -98,10 +98,12 @@ BETSE (see PLAN.md, docs/adr/0001).
 - `src/lib/sim/` — `worker.ts` runs the loop off-thread (ticks of ≤12 ms wall
   time; paced to a target speed factor × real time or 'max' via a wall/sim
   time anchor; live snapshots ≤ 30 Hz (`record: false`) plus one recorded per
-  endTime/600 of sim time (`record: true`, only these enter history), with
-  transferable Float32Arrays; per-step probe samples batched into `TraceChunk`); `protocol.ts` message types;
+  `endTime / (historyMB / frameBytes)` of sim time — as dense as the budget allows, up to every step (`record: true`, only these enter history), with
+  transferable Float32Arrays; recorded frames taken between live messages ride
+  along in `frames`, so per-step recording is one message per ≤33 ms; per-step
+  probe samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
-  keeps a snapshot `history` (recorded frames only, ≤3000 and ≤256 MB) with `playhead` / `seek()`
+  keeps a snapshot `history` (recorded frames only, capped by `experiment.historyMB`) with `playhead` / `seek()`
   for scrubbing (views read `session.view`, the displayed frame); a probe
   added mid-run is backfilled from history (frame resolution, interpolated);
   remaps regions/probes to nearest cells when the cluster is rebuilt,
@@ -136,7 +138,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   in the canvas→VideoFrame→encode hand-off (main thread, no HW VP9), ~5 ms extra
   per new snapshot. Encoder back-pressure via `dequeue` (≤8 queued), progress
   counts emitted chunks, AbortSignal cancels. Trace window option: strips show
-  [t0, t0+w] then roll to [t-w, t]. `VideoDialog.svelte` (toolbar clapperboard) picks
+  [t0, t0+w] then roll to [t-w, t]. VP9 in `bitrateMode: 'quantizer'` (constant
+  quality; picker → quantizer 32/20/10/4). `VideoDialog.svelte` (toolbar clapperboard) picks
   fields, traces, speed, width, fps; warns on traces without probes and on history
   trimmed by the memory budget; requires WebCodecs.
 - Debug logging: `debug` package, namespaces `galvani:video`, `galvani:session`;

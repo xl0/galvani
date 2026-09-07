@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getSession } from '$lib/sim/session.svelte';
+	import { getSession, snapshotBytes } from '$lib/sim/session.svelte';
 	import { getView, PROFILE_COLORS } from '$lib/sim/view.svelte';
 	import type { Modifier } from '$lib/core/experiment';
 	import { ghkVoltage, nernst } from '$lib/core/derived';
@@ -30,6 +30,12 @@
 	const session = getSession();
 	const view = getView();
 	const ex = $derived(session.experiment);
+	/** what the recording budget buys for the current cluster: frames of the run's steps */
+	const recordedFrames = $derived.by(() => {
+		if (!session.snap) return 'run once to estimate';
+		const steps = Math.round(ex.endTime / ex.params.dt), frames = Math.min(steps, Math.floor((ex.historyMB * 2 ** 20) / snapshotBytes(session.snap)));
+		return frames >= steps ? `every step (${steps} frames)` : `${frames} of ${steps} steps, one per ${fmt(ex.endTime / frames * 1e3, 3)} ms`;
+	});
 	const set = (fn: (e: typeof ex) => void) => session.edit(fn);
 
 	const nernstMv = $derived(ex.ions.map((ion) => nernst(ion, ion.cCell, ion.cEnv, ex.params.T) * 1e3));
@@ -209,6 +215,7 @@
 			<BigField label="Time step" value={ex.params.dt} scale={1e3} unit="ms" description="Integration step. Smaller is more accurate and slower. Steps longer than the membrane RC time go unstable (Vm explodes, run halts): ~10 ms at default permeabilities, ~0.1 ms with strong channels." onchange={(v) => set((e) => (e.params.dt = v))} />
 			<BigField label="End time" value={ex.endTime} unit="s" description="The run pauses when simulated time reaches this. Press Run again to restart from zero." onchange={(v) => set((e) => (e.endTime = v))} />
 			<BigField label="Initialisation" value={ex.initTime} unit="s" description="BETSE-style init phase: simulate this long first with only the permanent modifiers (no timed interventions, cuts or bath changes), then restart the clock at 0 and begin the experiment from that settled state. 0 = start directly. Recorded frames and traces begin after initialisation." onchange={(v) => set((e) => (e.initTime = v))} />
+			<BigField label="Recording memory" value={ex.historyMB} unit="MB" min={1} description={`Budget for recorded frames (playback, backfill, video). The recording cadence is chosen so the whole run fits: ${recordedFrames}`} onchange={(v) => set((e) => (e.historyMB = v))} />
 			<BigField label="Initial Vm" value={ex.initialVm} scale={1e3} unit="mV" description="Starting membrane voltage. Realized by adding a little balancing anion inside each cell so the charge-capacitor relation gives this Vm at t = 0. Saves waiting a minute for the pump to polarize the cluster." onchange={(v) => set((e) => (e.initialVm = v))} />
 			<BigField label="Temperature" value={ex.params.T - 273.15} unit="°C" description="Sets the thermal voltage RT/F (about 26.7 mV at 37 °C) that appears in every flux and Nernst equation." onchange={(v) => set((e) => (e.params.T = v + 273.15))} />
 			<BigField label="Membrane capacitance" value={ex.params.cm} unit="F/m²" description="Charge per area per volt. Vm = surface charge / capacitance, so lower values make Vm swing further for the same ion movement. Real membranes are ~0.01 F/m²; BETSE uses 0.05." onchange={(v) => set((e) => (e.params.cm = v))} />

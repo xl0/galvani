@@ -123,6 +123,8 @@ export const ExperimentSchema = z.object({
 	endTime: z.number().positive(),
 	/** initialisation: simulate this long with only permanent modifiers, then restart the clock at 0 (BETSE init phase) */
 	initTime: z.number().nonnegative().default(0),
+	/** memory budget for recorded frames [MB]; the recording cadence is chosen so the whole run fits */
+	historyMB: z.number().positive().default(256),
 	profiles: z.array(ProfileSchema),
 	modifiers: z.array(ModifierSchema).default([]),
 	channels: z.array(ChannelSchema).default([]),
@@ -143,6 +145,7 @@ export const baseExperiment: Experiment = {
 	params: basicParams,
 	endTime: 60,
 	initTime: 0,
+	historyMB: 256,
 	profiles: [],
 	modifiers: [],
 	channels: [],

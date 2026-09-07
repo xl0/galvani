@@ -22,6 +22,8 @@ export interface VideoOptions {
 	rangeMode: 'run' | 'frame';
 	/** trace time window [s]; 0 = whole run. Starts at t0 and rolls once the clock passes it. */
 	window: number;
+	/** VP9 quantizer 0 (lossless-ish) .. 63; constant quality, so static frames cost almost nothing */
+	quantizer: number;
 	/** frames kept queued in the encoder */
 	queue?: number;
 	latencyMode?: 'quality' | 'realtime';
@@ -75,7 +77,10 @@ export async function renderVideo(session: SimSession, o: VideoOptions, onProgre
 	const muxer = new Muxer({ target, video: { codec: 'V_VP9', width, height, frameRate: o.fps } });
 	let encoded = 0, failure: Error | null = null;
 	const encoder = new VideoEncoder({ output: (chunk, meta) => { muxer.addVideoChunk(chunk, meta); encoded++; }, error: (e) => { debug('encoder error %o', e); failure = e; } });
-	encoder.configure({ codec: 'vp09.00.10.08', width, height, bitrate: 6e6, framerate: o.fps, latencyMode: o.latencyMode ?? 'quality', hardwareAcceleration: o.hardwareAcceleration ?? 'no-preference' });
+	const config: VideoEncoderConfig = { codec: 'vp09.00.10.08', width, height, framerate: o.fps, bitrateMode: 'quantizer', latencyMode: o.latencyMode ?? 'quality', hardwareAcceleration: o.hardwareAcceleration ?? 'no-preference' };
+	const { supported } = await VideoEncoder.isConfigSupported(config);
+	if (!supported) throw new Error('VP9 in quantizer (constant quality) mode is not supported by this browser');
+	encoder.configure(config);
 	// back-pressure: keep at most a few frames queued in the encoder, progress follows what it has emitted
 	const drain = (max: number) => new Promise<void>((r) => { const check = () => { if (failure || encoder.encodeQueueSize <= max) { encoder.removeEventListener('dequeue', check); r(); } }; encoder.addEventListener('dequeue', check); check(); });
 	let hi = 0, tDraw = 0, tWait = 0, tSubmit = 0;
@@ -108,7 +113,7 @@ export async function renderVideo(session: SimSession, o: VideoOptions, onProgre
 		ctx.textAlign = 'right'; ctx.fillText(session.experiment.name, width - 8, height - 8);
 		const tS = performance.now();
 		const frame = new VideoFrame(canvas, { timestamp: Math.round((k * 1e6) / o.fps), duration: Math.round(1e6 / o.fps) });
-		encoder.encode(frame, { keyFrame: k % (o.fps * 2) === 0 });
+		encoder.encode(frame, { keyFrame: k % (o.fps * 2) === 0, vp9: { quantizer: o.quantizer } } as VideoEncoderEncodeOptions);
 		frame.close();
 		const tB = performance.now(); tDraw += tS - tA; tSubmit += tB - tS;
 		await drain(o.queue ?? 8);

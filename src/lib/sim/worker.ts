@@ -8,7 +8,7 @@ import type { Mesh } from '$lib/core/mesh';
 import { createState, updateV, type SimState } from '$lib/core/state';
 import { buildEcm, createEcmState, pulse, setScreening } from '$lib/core/ecm';
 import { step, UnstableError } from '$lib/core/step';
-import type { FromWorker, MeshGeom, ToWorker } from './protocol';
+import type { FromWorker, MeshGeom, Snapshot, ToWorker } from './protocol';
 
 let exp: Experiment;
 let mesh: Mesh;
@@ -54,7 +54,9 @@ function geom(reason: 'load' | 'cut', cellMap?: Int32Array): void {
 	post({ type: 'geom', geom: g, reason, cellMap });
 }
 
-function snapshot(record = true): void {
+/** recorded frames waiting for the next live message */
+let pending: Snapshot[] = [];
+function snapshot(record = true, send = true): void {
 	const nIons = exp.ions.length;
 	const cc = new Float32Array(nIons * mesh.nCells);
 	for (let i = 0; i < nIons; i++) cc.set(state.ccCells[i], i * mesh.nCells);
@@ -70,9 +72,12 @@ function snapshot(record = true): void {
 		record,
 		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnvGrid ? x.cEnvGrid.reduce((a, b) => a + b, 0) / x.cEnvGrid.length : x.cEnv })) : [], trace
 	};
-	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, snap.pump.buffer, snap.iMem.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
-	lastSnapshot = performance.now();
 	if (record) lastSnapT = state.t;
+	if (!send) { pending.push(snap); return; }
+	const buffers = (s: Snapshot) => [s.vmAve.buffer, s.vm.buffer, s.cc.buffer, s.ccEnv.buffer, s.gjOpen.buffer, s.pump.buffer, s.iMem.buffer, s.trace.t.buffer, s.trace.values.buffer, s.trace.bath.buffer, ...s.channels.map((c) => c.P.buffer)];
+	post({ type: 'snapshot', snapshot: snap, frames: pending }, [...pending.flatMap(buffers), ...buffers(snap)]);
+	pending = [];
+	lastSnapshot = performance.now();
 }
 
 /** ion-major copy of the extracellular grid for the snapshot */
@@ -249,6 +254,11 @@ function cellMems(): Int32Array[] {
 	}
 	return cm;
 }
+/** bytes of one recorded snapshot (Float32 arrays; mirrors snapshotBytes in the session) */
+function frameBytes(): number {
+	const nC = mesh.nCells, nM = mesh.nMems, nI = exp.ions.length, env = state.ecm ? (nI + 1) * state.ecm.grid.nx * state.ecm.grid.ny : 0;
+	return 4 * (nC + nM + nI * nC + nI + 3 * nM + channels.length * nM + (network?.subs.length ?? 0) * nC + env);
+}
 function sampleTrace(): void {
 	traceT.push(state.t);
 	for (let i = 0; i < exp.ions.length; i++) traceB.push(state.ccEnv[i]);
@@ -284,15 +294,15 @@ function doStep(): boolean {
 function tick(): void {
 	if (!running) return;
 	const t0 = performance.now();
-	// record a frame at least every endTime/600 of simulated time so fast events are scrubbable
-	const frameDt = Math.max(exp.params.dt, exp.endTime / 600);
+	// recording cadence: as many frames as the memory budget holds, up to one per step
+	const frameDt = Math.max(exp.params.dt, exp.endTime / Math.max(2, Math.floor((exp.historyMB * 2 ** 20) / frameBytes())));
 	const allowedT = speed === 'max' ? Infinity : anchor.t + ((t0 - anchor.wall) / 1000) * speed;
 	let n = 0;
 	while (state.t < allowedT && performance.now() - t0 < 12) {
 		if (!doStep()) break;
 		n++;
 		if (phase === 'run' && state.t >= exp.endTime) { running = false; break; }
-		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot(true);
+		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot(true, false);
 	}
 	const dtms = performance.now() - t0;
 	stepsSince += n; stepsSinceTime += dtms;

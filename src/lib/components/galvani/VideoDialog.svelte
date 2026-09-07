@@ -32,6 +32,7 @@
 	let width = $state(1280);
 	let rangeMode = $state<'run' | 'frame'>('run');
 	let traceWindow = $state(0);
+	let quality = $state('20');
 	let abort: AbortController | null = null;
 	let busy = $state(false);
 	let progress = $state(0);
@@ -48,7 +49,7 @@
 		busy = true; error = ''; progress = 0;
 		try {
 			abort = new AbortController();
-			const blob = await renderVideo(session, { fields, traces, speed: Number(speed), fps, width: Math.round(width / 2) * 2, colormap: view.colormap, rangeMode, window: traceWindow, dark: document.documentElement.classList.contains('dark') }, (f) => (progress = f), abort.signal);
+			const blob = await renderVideo(session, { fields, traces, speed: Number(speed), fps, width: Math.round(width / 2) * 2, colormap: view.colormap, rangeMode, window: traceWindow, quantizer: Number(quality), dark: document.documentElement.classList.contains('dark') }, (f) => (progress = f), abort.signal);
 			downloadBlob(`${session.experiment.name.replace(/[^\w.-]+/g, '_')}.webm`, blob);
 			open = false;
 		} catch (e) { if (!(e instanceof DOMException && e.name === 'AbortError')) error = e instanceof Error ? e.message : String(e); }
@@ -79,6 +80,8 @@
 			<div class="grid grid-cols-[10rem_1fr] items-center gap-x-3 gap-y-2">
 				<span>Speed</span>
 				<div class="flex items-center gap-2"><Pick items={['0.01', '0.025', '0.05', '0.1', '0.25', '0.5', '1', '2.5', '5', '10', '25', '50', '100', '250', '1000'].map((v) => ({ value: v, label: `${v}× real time` }))} value={speed} onchange={(v) => (speed = v)} /><span class="text-muted-foreground">→ {duration > 0 ? `${fmt(duration, 3)} s of video at ${fps} fps` : 'nothing recorded'}</span></div>
+				<span>Quality</span>
+				<Pick items={[{ value: '32', label: 'draft (small file)' }, { value: '20', label: 'good' }, { value: '10', label: 'high' }, { value: '4', label: 'near lossless' }]} value={quality} onchange={(v) => (quality = v)} />
 				<span>Colour range</span>
 				<Pick items={[{ value: 'run', label: 'over the whole run (stable colours)' }, { value: 'frame', label: 'per frame' }]} value={rangeMode} onchange={(v) => (rangeMode = v as 'run' | 'frame')} />
 			</div>
