@@ -130,6 +130,9 @@ export const ExperimentSchema = z.object({
 	channels: z.array(ChannelSchema).default([]),
 	/** starting membrane voltage [V]; realized by offsetting the balancing anion per cell */
 	initialVm: z.number().default(0),
+	/** traced cells and whether the bath is traced (kept with the experiment so a link reproduces the view) */
+	probes: z.array(z.number().int().nonnegative()).default([]),
+	bathProbe: z.boolean().default(false),
 	network: NetworkSchema.nullable().default(null),
 	ecm: EcmSchema.nullable().default(null)
 });
@@ -150,6 +153,8 @@ export const baseExperiment: Experiment = {
 	modifiers: [],
 	channels: [],
 	initialVm: 0,
+	probes: [],
+	bathProbe: false,
 	network: null,
 	ecm: null
 };

@@ -107,7 +107,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   for scrubbing (views read `session.view`, the displayed frame); a probe
   added mid-run is backfilled from history (frame resolution, interpolated);
   remaps regions/probes to nearest cells when the cluster is rebuilt,
-  applies edits (`edit()`), debounces the URL hash; traces share one time base
+  applies edits (`edit()`), debounces the URL hash; probes and the bath probe
+  live in `experiment.probes` / `bathProbe` (hash, files) and are adopted on load; traces share one time base
   (`traceT`, sampled every step even without probes; per probe Vm, ions, then
   `extraNames`: substances, cell-mean GJ open / pump / iMem, channel P, V env) with null gaps for probes
   added later; bath concentrations are traced alongside (`traceBath`); probe colours are assigned

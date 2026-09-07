@@ -81,6 +81,24 @@ export class SimSession {
 		this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 		this.worker.onmessage = (ev: MessageEvent<FromWorker>) => this.onMessage(ev.data);
 		this.post({ type: 'load', experiment: $state.snapshot(this.experiment) });
+		this.applyProbes(this.experiment);
+	}
+
+	/** adopt the probes stored in an experiment (link, preset, file) */
+	private applyProbes(exp: Experiment): void {
+		this.probes = []; this.probeColors = {}; this.traces.clear();
+		for (const c of exp.probes) { this.probes = [...this.probes, c]; this.probeColors = { ...this.probeColors, [c]: this.freeColor() }; this.backfill(c); }
+		this.bathProbe = exp.bathProbe;
+		this.bathColor = exp.bathProbe ? this.freeColor() : '';
+		this.traceVersion++;
+		this.post({ type: 'probes', cells: $state.snapshot(this.probes) });
+	}
+
+	/** mirror the probe state into the experiment (URL hash, saved files) */
+	private syncProbes(): void {
+		this.experiment.probes = $state.snapshot(this.probes);
+		this.experiment.bathProbe = this.bathProbe;
+		this.scheduleHash();
 	}
 
 	stop(): void {
@@ -183,6 +201,7 @@ export class SimSession {
 			this.probes = probes;
 			this.probeColors = colors;
 			this.post({ type: 'probes', cells: probes });
+			this.syncProbes();
 		}
 	}
 
@@ -198,15 +217,17 @@ export class SimSession {
 			...p,
 			cells: p.cells.map((c) => cellMap[c]).filter((c) => c >= 0)
 		}));
-		this.scheduleHash();
+		this.syncProbes();
 	}
 
 	/** Apply an edited experiment: live update, or rebuild if geometry / initial state changed. */
 	setExperiment(next: Experiment): void {
 		const reload = needsReload($state.snapshot(this.experiment), next);
+		const probesChanged = next.probes.join() !== this.probes.join() || next.bathProbe !== this.bathProbe;
 		this.experiment = next;
 		if (reload) this.reset();
 		else this.post({ type: 'update', experiment: $state.snapshot(next) });
+		if (probesChanged) this.applyProbes(next);
 		this.scheduleHash();
 	}
 
@@ -287,6 +308,7 @@ export class SimSession {
 		}
 		this.traceVersion++;
 		this.post({ type: 'probes', cells: $state.snapshot(this.probes) });
+		this.syncProbes();
 	}
 
 	/** Fill a new probe's trace for times already simulated from the playback history
@@ -321,6 +343,7 @@ export class SimSession {
 		this.bathProbe = !this.bathProbe;
 		this.bathColor = this.bathProbe ? this.freeColor() : '';
 		this.traceVersion++;
+		this.syncProbes();
 	}
 
 	cut(cells: number[]): void { this.post({ type: 'cut', cells }); }
