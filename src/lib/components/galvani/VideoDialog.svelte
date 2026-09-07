@@ -62,7 +62,7 @@
 	<Dialog.Content class="w-[min(96vw,44rem)] sm:max-w-none">
 		<Dialog.Header>
 			<Dialog.Title>Export video</Dialog.Title>
-			<Dialog.Description>Renders the recorded frames ({session.history.length}, {fmt(span, 3)} s of simulation) into a WebM file. One panel per field; the traces share a grid cell or go below.</Dialog.Description>
+			<Dialog.Description>Renders the recorded frames ({session.history.length}, {fmt(span, 3)} s of simulation) into a WebM file. One panel per field (2×2 for four), trace strips below.</Dialog.Description>
 		</Dialog.Header>
 		<div class="grid gap-4 text-sm">
 			<div>

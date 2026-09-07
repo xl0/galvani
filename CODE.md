@@ -129,9 +129,9 @@ BETSE (see PLAN.md, docs/adr/0001).
   OffscreenCanvas-context) are shared by `ClusterView` and the video exporter.
 - `src/lib/video.ts` — `renderVideo(session, opts)`: recorded frames → WebM (VP9 via
   WebCodecs `VideoEncoder`, muxed by `webm-muxer`, whole file in memory). Layout:
-  fields + traces are grid items (1–3 in a row, 4 → 2×2, else 3 per row); each field
-  gets a panel + colour bar; trace strips (per probe, bath dashed) fill the last
-  grid cell when the item count is even, else a full-width block below; footer has
+  field panels in a grid (1–3 in a row, 4 → 2×2, else 3 per row), panel height
+  from the cluster aspect; each with a colour bar; trace strips (per probe, bath
+  dashed) full-width below; footer has
   time and experiment name. Speed = sim seconds per video second; frames repeat the
   latest recorded snapshot; field panels are cached per snapshot (only strips,
   cursor and footer redraw between snapshots). Cost is ~4.5 ms/frame at 1440 px

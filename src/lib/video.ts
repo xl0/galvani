@@ -39,17 +39,16 @@ export async function renderVideo(session: SimSession, o: VideoOptions, onProgre
 	const ions = session.experiment.ions, profiles = session.experiment.profiles;
 	const t0 = hist[0].t, t1 = hist[hist.length - 1].t;
 	const nFrames = Math.max(2, Math.ceil(((t1 - t0) / o.speed) * o.fps));
-	// layout: a grid of cells (1-3 → one row, 4 → 2×2, more → 3 per row). The traces count as one item:
-	// with an even item count they take the last grid cell (strips stacked), otherwise a full-width block below.
-	const nP = o.fields.length, nT = o.traces.length, nItems = nP + (nT ? 1 : 0);
-	const cols = nItems <= 3 ? nItems : nItems === 4 ? 2 : 3, rows = Math.ceil(nP / cols);
-	const tracesInGrid = nT > 0 && nItems % 2 === 0 && rows * cols === nItems;
-	const panelW = Math.floor(o.width / Math.max(1, cols)), panelH = Math.round(panelW * 0.8), barH = 34, cellH = panelH + barH;
-	const stripH = tracesInGrid ? Math.floor(cellH / nT) : 110;
-	let height = rows * cellH + (tracesInGrid ? 0 : nT * stripH) + 24;
+	// layout: field panels in a grid (1-3 → one row, 4 → 2×2, more → 3 per row), trace strips full-width below.
+	// Panel height follows the cluster's aspect ratio so wide clusters don't leave empty bands.
+	const nP = o.fields.length, nT = o.traces.length;
+	const cols = nP <= 3 ? Math.max(1, nP) : nP === 4 ? 2 : 3, rows = Math.ceil(nP / cols);
+	const [bx0, by0, bx1, by1] = geom.bounds, aspect = Math.min(1, Math.max(0.4, ((by1 - by0) / (bx1 - bx0)) * 1.15));
+	const panelW = Math.floor(o.width / cols), panelH = Math.round(panelW * aspect), barH = 34, cellH = panelH + barH, stripH = 110;
+	let height = rows * cellH + nT * stripH + 24;
 	height += height % 2;
 	const width = o.width;
-	debug('render %d frames, %dx%d, %d fields + %d traces (%s), history %d frames %s..%s s', nFrames, width, height, nP, nT, tracesInGrid ? 'grid' : 'below', hist.length, t0, t1);
+	debug('render %d frames, %dx%d, %d fields (%d cols) + %d traces, history %d frames %s..%s s', nFrames, width, height, nP, cols, nT, hist.length, t0, t1);
 	const canvas = new OffscreenCanvas(width, height);
 	const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
 	// field panels are redrawn only when the snapshot changes (slow speeds repeat one snapshot for many frames)
@@ -105,9 +104,8 @@ export async function renderVideo(session: SimSession, o: VideoOptions, onProgre
 			});
 		}
 		ctx.drawImage(panels, 0, 0);
-		const tx = tracesInGrid ? (nP % cols) * panelW : 0, ty = tracesInGrid ? Math.floor(nP / cols) * cellH : rows * cellH, tw = tracesInGrid ? panelW : width;
 		const tRange = tRangeAt(s.t);
-		traceSeries.forEach((ts, j) => drawTraceStrip(ctx, tx, ty + j * stripH, tw, stripH, tr, ts.series, tRange, s.t, ts.label, fg, grid));
+		traceSeries.forEach((ts, j) => drawTraceStrip(ctx, 0, rows * cellH + j * stripH, width, stripH, tr, ts.series, tRange, s.t, ts.label, fg, grid));
 		ctx.fillStyle = fg; ctx.font = '12px ui-monospace, monospace'; ctx.textAlign = 'left';
 		ctx.fillText(`t = ${s.t.toFixed(3)} s`, 8, height - 8);
 		ctx.textAlign = 'right'; ctx.fillText(session.experiment.name, width - 8, height - 8);

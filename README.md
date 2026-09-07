@@ -105,9 +105,9 @@ better over hundreds of steps.
 ![Video export dialog](docs/img/video-dialog.png)
 
 Pick fields (one panel each), trace quantities, playback speed, colour range, width,
-a trace window (rolling once exhausted) and frame rate. With an even number of items
-the traces take a grid cell; with an odd number they go below. Needs a browser with
-WebCodecs: Chromium, Safari 16.4+, Firefox 130+.
+a trace window (rolling once exhausted), quality and frame rate. Panels form a row
+(2×2 for four) with the trace strips below. Needs a browser with WebCodecs:
+Chromium, Safari 16.4+, Firefox 130+.
 
 The experiment is also encoded in the URL hash, so a link reproduces the setup.
 
