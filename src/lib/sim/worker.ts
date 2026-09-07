@@ -54,11 +54,11 @@ function geom(reason: 'load' | 'cut', cellMap?: Int32Array): void {
 	post({ type: 'geom', geom: g, reason, cellMap });
 }
 
-function snapshot(): void {
+function snapshot(record = true): void {
 	const nIons = exp.ions.length;
 	const cc = new Float32Array(nIons * mesh.nCells);
 	for (let i = 0; i < nIons; i++) cc.set(state.ccCells[i], i * mesh.nCells);
-	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB), subNames: network ? network.subs.map((x) => x.cfg.name) : [] };
+	const trace = { probes: probes.slice(), t: Float64Array.from(traceT), values: Float32Array.from(traceV), bath: Float32Array.from(traceB), extras: traceExtras() };
 	traceT = []; traceV = []; traceB = [];
 	const snap = {
 		t: state.t, step: state.step, running, stepsPerSec,
@@ -67,11 +67,12 @@ function snapshot(): void {
 		pump: Float32Array.from(state.rateNaK), iMem: Float32Array.from(state.iMem), phase,
 		env: state.ecm ? { nx: state.ecm.grid.nx, ny: state.ecm.grid.ny, xmin: state.ecm.grid.xmin, ymin: state.ecm.grid.ymin, delta: state.ecm.grid.delta, cc: envGrid(), v: Float32Array.from(state.ecm.vEnv) } : null,
 		channels: channels.map((ch) => ({ id: ch.id, type: ch.type, P: Float32Array.from(ch.P) })),
+		record,
 		subs: network ? network.subs.map((x) => ({ name: x.cfg.name, cells: Float32Array.from(x.cCells), env: x.cEnvGrid ? x.cEnvGrid.reduce((a, b) => a + b, 0) / x.cEnvGrid.length : x.cEnv })) : [], trace
 	};
 	post({ type: 'snapshot', snapshot: snap }, [snap.vmAve.buffer, snap.vm.buffer, cc.buffer, snap.ccEnv.buffer, snap.gjOpen.buffer, snap.pump.buffer, snap.iMem.buffer, trace.t.buffer, trace.values.buffer, trace.bath.buffer, ...snap.channels.map((c) => c.P.buffer)]);
 	lastSnapshot = performance.now();
-	lastSnapT = state.t;
+	if (record) lastSnapT = state.t;
 }
 
 /** ion-major copy of the extracellular grid for the snapshot */
@@ -232,13 +233,36 @@ function finishInit(): void {
 	post({ type: 'initDone' });
 }
 
+/** ids of the traced quantities after Vm and the ions (see TraceChunk.extras) */
+function traceExtras(): string[] {
+	return [...(network ? network.subs.map((x) => `S:${x.cfg.name}`) : []), 'gj', 'pump', 'imem', ...channels.map((ch) => `P:${ch.id}`), ...(state.ecm ? ['venv'] : [])];
+}
+/** membranes of each cell, per mesh */
+const cellMemsCache = new WeakMap<Mesh, Int32Array[]>();
+function cellMems(): Int32Array[] {
+	let cm = cellMemsCache.get(mesh);
+	if (!cm) {
+		const lists: number[][] = Array.from({ length: mesh.nCells }, () => []);
+		for (let m = 0; m < mesh.nMems; m++) lists[mesh.memToCell[m]].push(m);
+		cm = lists.map((l) => Int32Array.from(l));
+		cellMemsCache.set(mesh, cm);
+	}
+	return cm;
+}
 function sampleTrace(): void {
 	traceT.push(state.t);
 	for (let i = 0; i < exp.ions.length; i++) traceB.push(state.ccEnv[i]);
+	if (probes.length === 0) return;
+	const cm = cellMems();
+	const mean = (a: Float64Array, ms: Int32Array) => { let s = 0; for (let k = 0; k < ms.length; k++) s += a[ms[k]]; return s / ms.length; };
 	for (const c of probes) {
 		traceV.push(state.vmAve[c]);
 		for (let i = 0; i < exp.ions.length; i++) traceV.push(state.ccCells[i][c]);
 		if (network) for (const sub of network.subs) traceV.push(sub.cCells[c]);
+		const ms = cm[c];
+		traceV.push(mean(state.gjOpen, ms), mean(state.rateNaK, ms), mean(state.iMem, ms));
+		for (const ch of channels) traceV.push(mean(ch.P, ms));
+		if (state.ecm) traceV.push(state.ecm.vEnv[state.ecm.grid.mapCell2Ecm[c]] * 1e3);
 	}
 }
 
@@ -268,12 +292,12 @@ function tick(): void {
 		if (!doStep()) break;
 		n++;
 		if (phase === 'run' && state.t >= exp.endTime) { running = false; break; }
-		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot();
+		if (state.t - lastSnapT >= frameDt - 1e-12) snapshot(true);
 	}
 	const dtms = performance.now() - t0;
 	stepsSince += n; stepsSinceTime += dtms;
 	if (stepsSinceTime > 500) { stepsPerSec = (stepsSince * 1000) / stepsSinceTime; stepsSince = 0; stepsSinceTime = 0; }
-	if (performance.now() - lastSnapshot > 33 || !running) snapshot();
+	if (performance.now() - lastSnapshot > 33 || !running) snapshot(!running);
 	// when paced and ahead of schedule, sleep until the next step is due
 	if (running) setTimeout(tick, n === 0 && speed !== 'max' ? Math.max(1, Math.min(50, ((state.t - allowedT) / speed) * 1000)) : 0);
 }

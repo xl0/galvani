@@ -36,12 +36,12 @@
 	const withBath = $derived(session.bathProbe && ionIdx >= 0);
 	const css = (name: string) => getComputedStyle(wrap).getPropertyValue(name).trim();
 
-	const subIdx = $derived(quantity.startsWith('S:') ? session.subNames.indexOf(quantity.slice(2)) : -1);
+	const extraIdx = $derived(session.extraNames.indexOf(quantity));
 	function seriesData(c: number): (number | null)[] {
 		const tr = session.traces.get(c);
 		if (!tr) return [];
 		if (quantity === 'vm') return tr.vm.map((v) => (v === null ? null : v * 1e3));
-		if (subIdx >= 0) return tr.sub[subIdx] ?? [];
+		if (extraIdx >= 0) return tr.extra[extraIdx] ?? [];
 		return tr.cc[ionIdx];
 	}
 

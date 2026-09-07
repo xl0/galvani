@@ -97,16 +97,17 @@ BETSE (see PLAN.md, docs/adr/0001).
     voltage readouts shown in the config panel.
 - `src/lib/sim/` — `worker.ts` runs the loop off-thread (ticks of ≤12 ms wall
   time; paced to a target speed factor × real time or 'max' via a wall/sim
-  time anchor; snapshots ≤ 30 Hz plus one per endTime/600 of sim time, with
+  time anchor; live snapshots ≤ 30 Hz (`record: false`) plus one recorded per
+  endTime/600 of sim time (`record: true`, only these enter history), with
   transferable Float32Arrays; per-step probe samples batched into `TraceChunk`); `protocol.ts` message types;
   `session.svelte.ts` (`SimSession`, context) mirrors worker state with runes,
-  keeps a snapshot `history` (≤3000 frames and ≤256 MB; worker records a
-  frame at least every endTime/1000 of sim time) with `playhead` / `seek()`
+  keeps a snapshot `history` (recorded frames only, ≤3000 and ≤256 MB) with `playhead` / `seek()`
   for scrubbing (views read `session.view`, the displayed frame); a probe
   added mid-run is backfilled from history (frame resolution, interpolated);
   remaps regions/probes to nearest cells when the cluster is rebuilt,
   applies edits (`edit()`), debounces the URL hash; traces share one time base
-  (`traceT`, sampled every step even without probes) with null gaps for probes
+  (`traceT`, sampled every step even without probes; per probe Vm, ions, then
+  `extraNames`: substances, cell-mean GJ open / pump / iMem, channel P, V env) with null gaps for probes
   added later; bath concentrations are traced alongside (`traceBath`); probe colours are assigned
   on add and kept stable (`probeColors`); `view.svelte.ts` display
   state (field, colormap, tool, brush, zoom/pan; colour range per field in
@@ -125,15 +126,27 @@ BETSE (see PLAN.md, docs/adr/0001).
   + regions + scale bar, `drawColorbar`, `drawTraceStrip`; pure, canvas- or
   OffscreenCanvas-context) are shared by `ClusterView` and the video exporter.
 - `src/lib/video.ts` — `renderVideo(session, opts)`: recorded frames → WebM (VP9 via
-  WebCodecs `VideoEncoder`, muxed by `webm-muxer`). Layout: one panel + colour bar
-  per selected field (≤3 per row), trace strips (per probe, bath dashed) below,
-  time and experiment name in the footer. Speed = sim seconds per video second;
-  frames repeat the latest recorded snapshot. Colour range over the run or per
-  frame. `VideoDialog.svelte` (toolbar clapperboard) picks fields, traces, speed,
-  width, fps; requires WebCodecs.
+  WebCodecs `VideoEncoder`, muxed by `webm-muxer`, whole file in memory). Layout:
+  fields + traces are grid items (1–3 in a row, 4 → 2×2, else 3 per row); each field
+  gets a panel + colour bar; trace strips (per probe, bath dashed) fill the last
+  grid cell when the item count is even, else a full-width block below; footer has
+  time and experiment name. Speed = sim seconds per video second; frames repeat the
+  latest recorded snapshot; field panels are cached per snapshot (only strips,
+  cursor and footer redraw between snapshots). Cost is ~4.5 ms/frame at 1440 px
+  in the canvas→VideoFrame→encode hand-off (main thread, no HW VP9), ~5 ms extra
+  per new snapshot. Encoder back-pressure via `dequeue` (≤8 queued), progress
+  counts emitted chunks, AbortSignal cancels. Trace window option: strips show
+  [t0, t0+w] then roll to [t-w, t]. `VideoDialog.svelte` (toolbar clapperboard) picks
+  fields, traces, speed, width, fps; warns on traces without probes and on history
+  trimmed by the memory budget; requires WebCodecs.
+- Debug logging: `debug` package, namespaces `galvani:video`, `galvani:session`;
+  enable with `localStorage.debug = 'galvani:*'`.
 - `src/lib/persist.ts` — experiment <-> deflate-raw + base64url hash
   (native CompressionStream). `src/lib/viz/colormap.ts` — viridis/coolwarm/magma LUTs.
-- `src/lib/components/galvani/` — `Workbench` (owns session/view; header row + a horizontal Resizable PaneGroup: settings | canvas+playback+colorbar | traces; side panes collapsible by drag or `[` `]`, layout saved under `autoSaveId`),
+- `src/lib/components/galvani/` — `Workbench` (owns session/view; in dev the
+  session is parked in `import.meta.hot.data` and `stop()` is skipped, so the
+  sim survives hot updates of UI/viz modules — a `worker.ts` edit still reloads
+  the page; header row + a horizontal Resizable PaneGroup: settings | canvas+playback+colorbar | traces; side panes collapsible by drag or `[` `]`, layout saved under `autoSaveId`),
   `ConfigPanel` (sections of `NumField`s bound via `session.edit`), `Toolbar`
   (run/step/reset, field, tools + active-region picker and brush size when
   painting, speed, theme), `ClusterView` (Canvas2D polygons, hit-test,

@@ -1,5 +1,6 @@
 import type { MeshGeom, Snapshot } from '$lib/sim/protocol';
 import type { Ion } from '$lib/core/params';
+import { channelModels } from '$lib/core/channels';
 
 /**
  * Values of a display field from a snapshot: per cell, or per membrane for fields native to
@@ -42,7 +43,7 @@ export function fieldLabel(f: string, s: Snapshot | null): string {
 	if (f === 'gj') return 'GJ open';
 	if (f === 'pump') return 'pump rate';
 	if (f === 'imem') return 'membrane current';
-	if (f.startsWith('P:')) return `open ${s?.channels.find((c) => c.id === f.slice(2))?.type ?? f.slice(2)}`;
+	if (f.startsWith('P:')) { const t = s?.channels.find((c) => c.id === f.slice(2))?.type; return `open ${(t && channelModels[t]?.label) ?? t ?? f.slice(2)}`; }
 	if (f.startsWith('S:')) return `[${f.slice(2)}]`;
 	return `[${f}]`;
 }

@@ -3,6 +3,7 @@ import type { Ion } from '$lib/core/params';
 import type { Profile } from '$lib/core/experiment';
 import { colormapLut, type ColormapName } from './colormap';
 import { fieldValues } from './fields';
+import { si } from '$lib/format';
 
 export interface ClusterStyle {
 	colormap: ColormapName;
@@ -112,6 +113,19 @@ export function drawColorbar(ctx: Ctx, x: number, y: number, w: number, h: numbe
 	ctx.textAlign = 'center'; ctx.fillText(label, x + w / 2, y - 4);
 }
 
+/** probe markers (dot + cell index) at the cell centres */
+export function drawProbes(ctx: Ctx, g: MeshGeom, probes: number[], colors: Record<number, string>, xf: ReturnType<typeof clusterTransform>, fg: string): void {
+	ctx.font = '10px ui-monospace, monospace'; ctx.textAlign = 'left';
+	for (const c of probes) {
+		if (c >= g.nCells) continue;
+		const x = xf.toX(g.cellCentres[2 * c]), y = xf.toY(g.cellCentres[2 * c + 1]);
+		ctx.fillStyle = colors[c] ?? '#888';
+		ctx.beginPath(); ctx.arc(x, y, 4, 0, 2 * Math.PI); ctx.fill();
+		ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+		ctx.fillStyle = fg; ctx.fillText(String(c), x + 6, y - 4);
+	}
+}
+
 /** simple multi-series line chart with a time cursor, axes and a label; series share the y axis */
 export function drawTraceStrip(ctx: Ctx, x: number, y: number, w: number, h: number, t: ArrayLike<number>, series: { color: string; y: (number | null)[]; dash?: number[] }[], tRange: [number, number], cursorT: number, label: string, fg: string, grid: string): void {
 	const padL = 52, padB = 16, padT = 14;
@@ -126,7 +140,7 @@ export function drawTraceStrip(ctx: Ctx, x: number, y: number, w: number, h: num
 	ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
 	ctx.textAlign = 'right'; ctx.fillText(fmtNum(hi), x0 - 4, y0 + 4); ctx.fillText(fmtNum(lo), x0 - 4, y1 + 3);
 	ctx.textAlign = 'left'; ctx.fillText(label, x0 + 4, y0 - 3);
-	ctx.textAlign = 'center'; ctx.fillText(`${fmtNum(tRange[0])} s`, x0, y1 + 12); ctx.fillText(`${fmtNum(tRange[1])} s`, x1, y1 + 12);
+	ctx.textAlign = 'left'; ctx.fillText(si(tRange[0], 's'), x0, y1 + 12); ctx.textAlign = 'right'; ctx.fillText(si(tRange[1], 's'), x1, y1 + 12);
 	ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
 	for (const s of series) {
 		ctx.strokeStyle = s.color; ctx.lineWidth = 1.5; ctx.setLineDash(s.dash ?? []);

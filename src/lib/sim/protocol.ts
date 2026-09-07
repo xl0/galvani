@@ -21,8 +21,8 @@ export interface TraceChunk {
 	values: Float32Array;
 	/** bath concentration per sample per ion (nSamples x nIons) */
 	bath: Float32Array;
-	/** substance names in the order they appear in values */
-	subNames: string[];
+	/** extra quantity ids after Vm and the ions in `values`: 'S:<substance>' [mM], 'gj', 'pump', 'imem' (cell means), 'P:<channel>', 'venv' [mV] */
+	extras: string[];
 }
 
 export interface Snapshot {
@@ -48,6 +48,8 @@ export interface Snapshot {
 	/** network substances: per-cell concentration [mM] and bath value */
 	subs: { name: string; cells: Float32Array; env: number }[];
 	trace: TraceChunk;
+	/** true for frames taken on the recording cadence (kept in history); false for live-view refreshes */
+	record: boolean;
 }
 
 export type ToWorker =

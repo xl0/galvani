@@ -10,17 +10,20 @@
 	import TracePanel from './TracePanel.svelte';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { Input } from '$lib/components/ui/input';
+	import { renderVideo } from '$lib/video';
 
-	const session = new SimSession();
+	// dev: the session (and its worker) survives hot updates; a worker.ts edit still reloads the page
+	const session: SimSession = import.meta.hot?.data.session ?? new SimSession();
+	if (import.meta.hot) import.meta.hot.data.session = session;
 	const view = new ViewState();
 	setSession(session);
 	setView(view);
 	view.persist();
 
 	onMount(() => {
-		if (import.meta.env.DEV) (window as unknown as { galvani: unknown }).galvani = { session, view };
+		if (import.meta.env.DEV) (window as unknown as { galvani: unknown }).galvani = { session, view, renderVideo };
 		session.start();
-		return () => session.stop();
+		return () => { if (!import.meta.hot) session.stop(); };
 	});
 	// side panes collapse by dragging past their minimum or with the [ ] keys; layout persists in localStorage
 	let leftPane = $state<Resizable.Pane>();

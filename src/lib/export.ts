@@ -1,5 +1,6 @@
 import { ExperimentSchema, type Experiment } from './core/experiment';
 import type { SimSession } from './sim/session.svelte';
+import { fieldUnit } from './viz/fields';
 
 function download(name: string, text: string, type: string): void {
 	const a = document.createElement('a');
@@ -12,9 +13,9 @@ function download(name: string, text: string, type: string): void {
 /** Traces of all probes as CSV: t, then per probe Vm [mV] and each ion [mM]. */
 export function exportTracesCsv(session: SimSession): void {
 	const ions = session.experiment.ions.map((i) => i.name);
-	const subs = session.subNames;
+	const extras = session.extraNames;
 	const probes = session.probes;
-	const head = ['t_s', ...probes.flatMap((c) => [`cell${c}_Vm_mV`, ...ions.map((n) => `cell${c}_${n}_mM`), ...subs.map((n) => `cell${c}_${n}_mM`)])];
+	const head = ['t_s', ...probes.flatMap((c) => [`cell${c}_Vm_mV`, ...ions.map((n) => `cell${c}_${n}_mM`), ...extras.map((id) => `cell${c}_${id.replace(/^[SP]:/, '')}_${fieldUnit(id).replace(/[^\w]/g, '')}`)])];
 	const rows = [head.join(',')];
 	const t = session.traceT;
 	for (let j = 0; j < t.length; j++) {
@@ -24,7 +25,7 @@ export function exportTracesCsv(session: SimSession): void {
 			const vm = tr?.vm[j];
 			row.push(vm == null ? '' : (vm * 1e3).toPrecision(7));
 			for (let i = 0; i < ions.length; i++) { const v = tr?.cc[i][j]; row.push(v == null ? '' : v.toPrecision(7)); }
-			for (let k = 0; k < subs.length; k++) { const v = tr?.sub[k]?.[j]; row.push(v == null ? '' : v.toPrecision(7)); }
+			for (let k = 0; k < extras.length; k++) { const v = tr?.extra[k]?.[j]; row.push(v == null ? '' : v.toPrecision(7)); }
 		}
 		rows.push(row.join(','));
 	}

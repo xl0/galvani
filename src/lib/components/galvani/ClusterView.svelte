@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import type { Snapshot } from '$lib/sim/protocol';
 	import { fieldValues as fieldValuesOf } from '$lib/viz/fields';
-	import { clusterTransform, drawCluster } from '$lib/viz/render';
+	import { clusterTransform, drawCluster, drawProbes } from '$lib/viz/render';
 	import { fmt } from '$lib/format';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView } from '$lib/sim/view.svelte';
@@ -126,21 +126,7 @@
 			ctx.font = '11px ui-monospace, monospace';
 			ctx.fillText('bath', bx + 8, by + 4);
 		}
-		// probes
-		ctx.font = '10px ui-monospace, monospace';
-		session.probes.forEach((c) => {
-			if (c >= g.nCells) return;
-			const x = toX(g.cellCentres[2 * c]), y = toY(g.cellCentres[2 * c + 1]);
-			ctx.fillStyle = session.probeColors[c] ?? '#888';
-			ctx.beginPath();
-			ctx.arc(x, y, 4, 0, 2 * Math.PI);
-			ctx.fill();
-			ctx.strokeStyle = '#fff';
-			ctx.lineWidth = 1;
-			ctx.stroke();
-			ctx.fillStyle = css('--foreground');
-			ctx.fillText(String(c), x + 6, y - 4);
-		});
+		drawProbes(ctx, g, session.probes, session.probeColors, xf, css('--foreground'));
 	}
 
 	$effect(() => {

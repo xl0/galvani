@@ -3,6 +3,10 @@ import { needsReload, type Experiment } from '$lib/core/experiment';
 import { defaultPreset } from '$lib/presets';
 import { decodeExperiment, encodeExperiment } from '$lib/persist';
 import type { FromWorker, MeshGeom, Snapshot, ToWorker } from './protocol';
+import dbg from 'debug';
+import { fieldValues } from '$lib/viz/fields';
+
+const debug = dbg('galvani:session');
 
 /** Per-probe series aligned to SimSession.traceT; null before the probe existed. */
 function snapshotBytes(s: Snapshot): number {
@@ -17,8 +21,8 @@ export interface Trace {
 	vm: (number | null)[];
 	/** per ion, [mol/m3] */
 	cc: (number | null)[][];
-	/** per network substance (order of `subNames`), [mM] */
-	sub: (number | null)[][];
+	/** extra quantities in `extraNames` order (substances [mM], gj/pump/imem cell means, channel P, V env [mV]) */
+	extra: (number | null)[][];
 }
 
 export const PROBE_PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#9a6324', '#469990', '#bfef45'];
@@ -48,8 +52,8 @@ export class SimSession {
 	traceT: number[] = [];
 	/** bath concentration per ion, aligned to traceT */
 	traceBath: number[][] = [];
-	/** substance names as traced */
-	subNames = $state<string[]>([]);
+	/** ids of the extra traced quantities (see TraceChunk.extras) */
+	extraNames = $state<string[]>([]);
 	traces = new Map<number, Trace>();
 	/** colour per probed cell; stable while the probe exists */
 	probeColors = $state<Record<number, string>>({});
@@ -68,6 +72,7 @@ export class SimSession {
 
 	/** Call once from onMount (needs window). */
 	async start(): Promise<void> {
+		if (this.worker) return;
 		if (location.hash.length > 1) {
 			try {
 				this.experiment = await decodeExperiment(location.hash.slice(1));
@@ -100,10 +105,10 @@ export class SimSession {
 			}
 			case 'snapshot':
 				this.snap = msg.snapshot;
-				if (this.history.length === 0 || msg.snapshot.step !== this.history[this.history.length - 1].step) {
+				if (msg.snapshot.record && (this.history.length === 0 || msg.snapshot.step !== this.history[this.history.length - 1].step)) {
 					this.history.push(msg.snapshot);
 					this.historyBytes += snapshotBytes(msg.snapshot);
-					while (this.history.length > SimSession.MAX_HISTORY || (this.historyBytes > SimSession.HISTORY_BYTES && this.history.length > 1)) this.historyBytes -= snapshotBytes(this.history.shift()!);
+					while (this.history.length > SimSession.MAX_HISTORY || (this.historyBytes > SimSession.HISTORY_BYTES && this.history.length > 1)) { this.historyBytes -= snapshotBytes(this.history.shift()!); debug('history full (%d frames, %d MB): dropped t=%s', this.history.length, (this.historyBytes / 2 ** 20).toFixed(0), this.history[0].t); }
 					this.historyLen = this.history.length;
 				}
 				this.running = msg.snapshot.running;
@@ -121,11 +126,11 @@ export class SimSession {
 	}
 
 	private appendTrace(s: Snapshot): void {
-		const { probes, t, values, bath, subNames } = s.trace;
+		const { probes, t, values, bath, extras } = s.trace;
 		if (t.length === 0) return;
 		const nIons = this.experiment.ions.length;
-		const nSubs = subNames.length;
-		if (subNames.join() !== this.subNames.join()) { this.subNames = subNames; for (const tr of this.traces.values()) tr.sub = subNames.map((_, k) => tr.sub[k] ?? new Array(tr.vm.length).fill(null)); }
+		const nSubs = extras.length;
+		if (extras.join() !== this.extraNames.join()) { const old = this.extraNames; this.extraNames = extras; for (const tr of this.traces.values()) tr.extra = extras.map((id) => tr.extra[old.indexOf(id)] ?? new Array(tr.vm.length).fill(null)); }
 		const stride = 1 + nIons + nSubs;
 		const n0 = this.traceT.length;
 		for (let j = 0; j < t.length; j++) this.traceT.push(t[j]);
@@ -134,19 +139,19 @@ export class SimSession {
 		// probes not in this chunk (just removed / not yet known to the worker) get gaps
 		for (const [c, tr] of this.traces) {
 			if (probes.includes(c)) continue;
-			for (let j = 0; j < t.length; j++) { tr.vm.push(null); for (let i = 0; i < nIons; i++) tr.cc[i].push(null); for (let k = 0; k < nSubs; k++) tr.sub[k].push(null); }
+			for (let j = 0; j < t.length; j++) { tr.vm.push(null); for (let i = 0; i < nIons; i++) tr.cc[i].push(null); for (let k = 0; k < nSubs; k++) tr.extra[k].push(null); }
 		}
 		probes.forEach((c, k) => {
 			let tr = this.traces.get(c);
 			if (!tr) {
-				tr = { vm: new Array(n0).fill(null), cc: Array.from({ length: nIons }, () => new Array(n0).fill(null)), sub: Array.from({ length: nSubs }, () => new Array(n0).fill(null)) };
+				tr = { vm: new Array(n0).fill(null), cc: Array.from({ length: nIons }, () => new Array(n0).fill(null)), extra: Array.from({ length: nSubs }, () => new Array(n0).fill(null)) };
 				this.traces.set(c, tr);
 			}
 			for (let j = 0; j < t.length; j++) {
 				const base = (j * probes.length + k) * stride;
 				tr.vm.push(values[base]);
 				for (let i = 0; i < nIons; i++) tr.cc[i].push(values[base + 1 + i]);
-				for (let k = 0; k < nSubs; k++) tr.sub[k].push(values[base + 1 + nIons + k]);
+				for (let k = 0; k < nSubs; k++) tr.extra[k].push(values[base + 1 + nIons + k]);
 			}
 		});
 		this.traceVersion++;
@@ -289,8 +294,11 @@ export class SimSession {
 	private backfill(cell: number): void {
 		const n = this.traceT.length, h = this.history;
 		if (n === 0 || h.length === 0) return;
-		const nIons = this.experiment.ions.length, nSubs = this.subNames.length;
-		const tr: Trace = { vm: new Array(n).fill(null), cc: Array.from({ length: nIons }, () => new Array(n).fill(null)), sub: Array.from({ length: nSubs }, () => new Array(n).fill(null)) };
+		const nIons = this.experiment.ions.length, extras = this.extraNames, geom = this.geom!;
+		const tr: Trace = { vm: new Array(n).fill(null), cc: Array.from({ length: nIons }, () => new Array(n).fill(null)), extra: Array.from({ length: extras.length }, () => new Array(n).fill(null)) };
+		// per-cell values of the extra quantities, computed once per frame
+		const cache = new Map<Snapshot, (Float32Array | null)[]>();
+		const extraAt = (s: Snapshot) => { let v = cache.get(s); if (!v) { v = extras.map((id) => fieldValues(s, geom, this.experiment.ions, id, false)); cache.set(s, v); } return v; };
 		let f = 0;
 		for (let j = 0; j < n; j++) {
 			const t = this.traceT[j];
@@ -303,7 +311,8 @@ export class SimSession {
 			const lerp = (x: number, y: number) => x + (y - x) * w;
 			tr.vm[j] = lerp(a.vmAve[cell], b ? b.vmAve[cell] : a.vmAve[cell]);
 			for (let i = 0; i < nIons; i++) tr.cc[i][j] = lerp(a.cc[i * nCells + cell], (b ?? a).cc[i * nCells + cell]);
-			for (let k = 0; k < nSubs; k++) tr.sub[k][j] = lerp(a.subs[k]?.cells[cell] ?? NaN, (b ?? a).subs[k]?.cells[cell] ?? NaN);
+			const ea = extraAt(a), eb = b ? extraAt(b) : ea;
+			for (let k = 0; k < extras.length; k++) { const x = ea[k]?.[cell], y = eb[k]?.[cell]; tr.extra[k][j] = x === undefined || y === undefined ? null : lerp(x, y); }
 		}
 		this.traces.set(cell, tr);
 	}
