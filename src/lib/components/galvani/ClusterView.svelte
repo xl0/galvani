@@ -27,20 +27,27 @@
 		if (a) for (const v of a) { if (v < lo) lo = v; if (v > hi) hi = v; }
 		return [lo, hi];
 	}
-	/** min/max of the field over every recorded frame; rebuilt on field change or reset, folded per live frame */
+	/** min/max of the field over every recorded frame: reset on field change or reset, then folded
+	 *  incrementally as frames arrive (a full rescan per message would freeze the UI with dense recording) */
 	let runExt = $state<[number, number]>([Infinity, -Infinity]);
+	let scannedStep = -1;
+	const empty = $derived(session.historyLen === 0);
 	$effect(() => {
-		void view.field; void view.showMembranes; void session.geom;
-		const empty = session.historyLen === 0;
-		let lo = Infinity, hi = -Infinity;
-		if (!empty) for (const f of session.history) [lo, hi] = extentOf(fieldValues(f, view.showMembranes), lo, hi);
-		runExt = [lo, hi];
+		void view.field; void view.showMembranes; void session.geom; void empty;
+		scannedStep = -1;
+		runExt = [Infinity, -Infinity];
 	});
 	$effect(() => {
-		const s = session.snap;
-		if (!s) return;
-		const [lo, hi] = extentOf(fieldValues(s, untrack(() => view.showMembranes)), untrack(() => runExt[0]), untrack(() => runExt[1]));
-		if (lo !== runExt[0] || hi !== runExt[1]) runExt = [lo, hi];
+		void session.historyLen; const s = session.snap;
+		let [lo, hi] = untrack(() => runExt);
+		const membranes = untrack(() => view.showMembranes);
+		const h = session.history;
+		let i = h.length;
+		while (i > 0 && h[i - 1].step > scannedStep) i--;
+		for (; i < h.length; i++) [lo, hi] = extentOf(fieldValues(h[i], membranes), lo, hi);
+		if (h.length) scannedStep = h[h.length - 1].step;
+		if (s) [lo, hi] = extentOf(fieldValues(s, membranes), lo, hi);
+		if (lo !== untrack(() => runExt[0]) || hi !== untrack(() => runExt[1])) runExt = [lo, hi];
 	});
 
 	const range = $derived.by(() => {
