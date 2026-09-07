@@ -13,7 +13,7 @@ export class ViewState {
 	/** colour range per field: 'frame' = min/max of the displayed frame, 'run' = min/max over the run so far,
 	 *  'fixed' = the stored min/max */
 	ranges = $state<Record<string, RangeSetting>>({});
-	get rangeSetting(): RangeSetting { return this.ranges[this.field] ?? { mode: 'frame', min: -80, max: 0 }; }
+	get rangeSetting(): RangeSetting { return this.ranges[this.field] ?? { mode: 'run', min: -80, max: 0 }; }
 	setRange(patch: Partial<RangeSetting>): void { this.ranges = { ...this.ranges, [this.field]: { ...this.rangeSetting, ...patch } }; }
 	tool = $state<Tool>('probe');
 	/** profile id painted by the paint tool */
