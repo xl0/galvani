@@ -6,6 +6,7 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import Pick from './Pick.svelte';
 	import BigField from './BigField.svelte';
+	import NumField from './NumField.svelte';
 	import { getSession } from '$lib/sim/session.svelte';
 	import { getView } from '$lib/sim/view.svelte';
 	import { channelModels } from '$lib/core/channels';
@@ -28,6 +29,8 @@
 	let fields = $state<string[]>([]);
 	let traces = $state<string[]>([]);
 	let speed = $state('1');
+	let pacing = $state<'time' | 'frames'>('time');
+	let stride = $state(1);
 	let fps = $state(30);
 	let width = $state(1280);
 	let rangeMode = $state<'run' | 'frame'>('run');
@@ -43,13 +46,14 @@
 	/** history got trimmed to the memory budget: it no longer starts where the traces do */
 	const truncated = $derived(session.history.length > 0 && session.traceT.length > 0 && session.history[0].t > session.traceT[0] + 1e-9);
 	const warning = $derived(traces.length && !nProbes ? 'No probes: the trace strips would be empty. Add probes (they backfill from the recording) or untick the traces.' : truncated ? `The recording only covers the last ${fmt(span, 3)} s (earlier frames were dropped to fit the memory budget); the video starts at ${fmt(session.history[0].t, 3)} s.` : '');
-	const duration = $derived(span / Number(speed));
+	const nRec = $derived(session.history.length);
+	const duration = $derived(pacing === 'frames' ? (Math.floor(Math.max(0, nRec - 1) / Math.max(1, stride)) + 1) / fps : span / Number(speed));
 	const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 	async function go() {
 		busy = true; error = ''; progress = 0;
 		try {
 			abort = new AbortController();
-			const blob = await renderVideo(session, { fields, traces, speed: Number(speed), fps, width: Math.round(width / 2) * 2, colormap: view.colormap, rangeMode, window: traceWindow, quantizer: Number(quality), dark: document.documentElement.classList.contains('dark') }, (f) => (progress = f), abort.signal);
+			const blob = await renderVideo(session, { fields, traces, speed: Number(speed), stride: pacing === 'frames' ? stride : undefined, fps, width: Math.round(width / 2) * 2, colormap: view.colormap, rangeMode, window: traceWindow, quantizer: Number(quality), dark: document.documentElement.classList.contains('dark') }, (f) => (progress = f), abort.signal);
 			downloadBlob(`${session.experiment.name.replace(/[^\w.-]+/g, '_')}.webm`, blob);
 			open = false;
 		} catch (e) { if (!(e instanceof DOMException && e.name === 'AbortError')) error = e instanceof Error ? e.message : String(e); }
@@ -78,8 +82,13 @@
 				</div>
 			</div>
 			<div class="grid grid-cols-[10rem_1fr] items-center gap-x-3 gap-y-2">
-				<span>Speed</span>
-				<div class="flex items-center gap-2"><Pick items={['0.01', '0.025', '0.05', '0.1', '0.25', '0.5', '1', '2.5', '5', '10', '25', '50', '100', '250', '1000'].map((v) => ({ value: v, label: `${v}× real time` }))} value={speed} onchange={(v) => (speed = v)} /><span class="text-muted-foreground">→ {duration > 0 ? `${fmt(duration, 3)} s of video at ${fps} fps` : 'nothing recorded'}</span></div>
+				<span>Pacing</span>
+				<div class="flex flex-wrap items-center gap-2">
+					<Pick items={[{ value: 'time', label: 'by simulated time' }, { value: 'frames', label: 'by recorded frames' }]} value={pacing} onchange={(v) => (pacing = v as 'time' | 'frames')} />
+					{#if pacing === 'time'}<Pick items={['0.01', '0.025', '0.05', '0.1', '0.25', '0.5', '1', '2.5', '5', '10', '25', '50', '100', '250', '1000'].map((v) => ({ value: v, label: `${v}× real time` }))} value={speed} onchange={(v) => (speed = v)} />
+					{:else}<NumField label="every" value={stride} min={1} step={1} unit="recorded frames" onchange={(v) => (stride = Math.max(1, Math.round(v)))} />{/if}
+					<span class="text-muted-foreground">→ {duration > 0 ? `${fmt(duration, 3)} s of video at ${fps} fps${pacing === 'frames' ? ` (${fmt(span / duration, 3)}× real time)` : ''}` : 'nothing recorded'}</span>
+				</div>
 				<span>Quality</span>
 				<Pick items={[{ value: '32', label: 'draft (small file)' }, { value: '20', label: 'good' }, { value: '10', label: 'high' }, { value: '4', label: 'near lossless' }]} value={quality} onchange={(v) => (quality = v)} />
 				<span>Colour range</span>
@@ -87,7 +96,7 @@
 			</div>
 			<BigField label="Frame width" value={width} step={2} min={320} unit="px" description="Panels share the width (up to three per row); height follows." onchange={(v) => (width = v)} />
 			<BigField label="Trace window" value={traceWindow} step={0.1} min={0} unit="s" description="Time span of the trace strips; 0 shows the whole run. A window starts at the beginning and rolls once the clock passes it." onchange={(v) => (traceWindow = v)} />
-			<BigField label="Frame rate" value={fps} step={1} min={1} unit="fps" description="Frames between recorded snapshots repeat the last one, so rates above the snapshot rate only smooth the clock." onchange={(v) => (fps = v)} />
+			<BigField label="Frame rate" value={fps} step={1} min={1} unit="fps" description="Playback rate of the file. Paced by time, frames between recorded snapshots repeat the last one; paced by recorded frames, each video frame is a new snapshot." onchange={(v) => (fps = v)} />
 			{#if warning}<div class="text-amber-600 dark:text-amber-400">{warning}</div>{/if}
 			{#if error}<div class="text-destructive">{error}</div>{/if}
 		</div>

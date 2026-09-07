@@ -133,7 +133,8 @@ BETSE (see PLAN.md, docs/adr/0001).
   from the cluster aspect; each with a colour bar; trace strips (per probe, bath
   dashed) full-width below; footer has
   time and experiment name. Speed = sim seconds per video second; frames repeat the
-  latest recorded snapshot; field panels are cached per snapshot (only strips,
+  latest recorded snapshot, or with `stride` set video frame k shows recorded
+  frame k·stride (exact sync, no repeats); field panels are cached per snapshot (only strips,
   cursor and footer redraw between snapshots). Cost is ~4.5 ms/frame at 1440 px
   in the canvas→VideoFrame→encode hand-off (main thread, no HW VP9), ~5 ms extra
   per new snapshot. Encoder back-pressure via `dequeue` (≤8 queued), progress

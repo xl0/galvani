@@ -12,8 +12,10 @@ export interface VideoOptions {
 	fields: string[];
 	/** trace quantities ('vm', ion names, 'S:<sub>') drawn as strips under the panels */
 	traces: string[];
-	/** simulated seconds per second of video */
+	/** simulated seconds per second of video (ignored when `stride` is set) */
 	speed: number;
+	/** recorded frames per video frame: frame k shows recorded frame k·stride, so nothing repeats or is skipped */
+	stride?: number;
 	fps: number;
 	/** frame width in pixels (height follows the layout) */
 	width: number;
@@ -38,7 +40,8 @@ export async function renderVideo(session: SimSession, o: VideoOptions, onProgre
 	if (!geom || hist.length < 2) throw new Error('Nothing recorded yet: run the experiment first.');
 	const ions = session.experiment.ions, profiles = session.experiment.profiles;
 	const t0 = hist[0].t, t1 = hist[hist.length - 1].t;
-	const nFrames = Math.max(2, Math.ceil(((t1 - t0) / o.speed) * o.fps));
+	const stride = o.stride && o.stride >= 1 ? Math.floor(o.stride) : 0;
+	const nFrames = stride ? Math.floor((hist.length - 1) / stride) + 1 : Math.max(2, Math.ceil(((t1 - t0) / o.speed) * o.fps));
 	// layout: field panels in a grid (1-3 → one row, 4 → 2×2, more → 3 per row), trace strips full-width below.
 	// Panel height follows the cluster's aspect ratio so wide clusters don't leave empty bands.
 	const nP = o.fields.length, nT = o.traces.length;
@@ -85,8 +88,8 @@ export async function renderVideo(session: SimSession, o: VideoOptions, onProgre
 	let hi = 0, tDraw = 0, tWait = 0, tSubmit = 0;
 	const tStart = performance.now();
 	for (let k = 0; k < nFrames; k++) {
-		const t = t0 + (k * o.speed) / o.fps;
-		while (hi + 1 < hist.length && hist[hi + 1].t <= t) hi++;
+		if (stride) hi = k * stride;
+		else { const t = t0 + (k * o.speed) / o.fps; while (hi + 1 < hist.length && hist[hi + 1].t <= t) hi++; }
 		const s = hist[hi];
 		const tA = performance.now();
 		ctx.fillStyle = bg; ctx.fillRect(0, 0, width, height);
